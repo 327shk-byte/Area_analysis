@@ -373,7 +373,7 @@ if "orders_data" not in st.session_state:
 with st.sidebar:
     st.header("⚙️ 환경 설정")
     
-    with st.expander("🏢 공장 마스터 정보 관리", expanded=True):
+    with st.expander("🏢 공장 마스터 정보 관리", expanded=False):
         st.markdown("<p style='font-size: 0.85rem; color: #aaa; margin-bottom: 10px; white-space: nowrap;'>각 동별 전체면적(m2)을 수정하세요.</p>", unsafe_allow_html=True)
         
         # 데이터 에디터: 소수점 입력을 위해 데이터 타입을 명시적으로 float으로 유지
