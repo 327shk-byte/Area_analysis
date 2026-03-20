@@ -1,0 +1,42 @@
+orders:
+  columns:
+    order_id:
+      type: string
+      description: "주문 고유 식별자 (SEQ)"
+      required: true
+    model:
+      type: string
+      description: "모델명 (MODEL1)"
+      required: true
+    qty:
+      type: float
+      description: "수량"
+      required: true
+      min: 0.000001
+    plant:
+      type: integer
+      description: "진행동 (1~5)"
+      required: true
+      enum: [1, 2, 3, 4, 5]
+    area_m2_unit:
+      type: float
+      description: "제품 1EA 면적 (m2)"
+      required: true
+      min: 0.000001
+    start_in:
+      type: date
+      description: "제작일 (공장 입고일)"
+      required: true
+    end_out:
+      type: date
+      description: "포장일 (공장 반출일)"
+      required: false
+    status:
+      type: string
+      description: "주문 상태 (planned / actual / canceled)"
+      required: true
+      enum: ["planned", "actual", "canceled"]
+    updated_at:
+      type: datetime
+      description: "데이터 갱신 시각"
+      required: false

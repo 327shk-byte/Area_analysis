@@ -1,0 +1,31 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyInstaller / Build artifacts
+build/
+dist/
+exe_build/
+*.exe
+*.pkg
+*.spec
+
+# Streamlit config (if any)
+.streamlit/
+! .streamlit/config.toml
+
+# Local config & samples
+system_config.json
+user_config.json
+
+# Excel/Large data
+*.xlsb
+*.xlsx
+*.xls
+*.csv
+# If you NEED specific CSV files (like samples), you can add them back with '!' prefix
+!capacity_sample.csv
+!orders_sample.csv
+!capacity_master.json
+!orders_master.json

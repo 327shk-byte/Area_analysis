@@ -762,13 +762,18 @@ with tab1:
                         st.write("<p style='font-size: 0.85rem; color: #aaa; margin-bottom: -5px;'>📏 표시 기준</p>", unsafe_allow_html=True)
                         metric_opt = st.radio("Metric", ["점유율 (%)", "점유면적 (㎡)"], horizontal=True, label_visibility="collapsed")
                     with col_m2:
-                        st.markdown("""
+                        # [Persistence] 날짜 개수 세션 상태 관리
+                        if "date_count" not in st.session_state:
+                            st.session_state["date_count"] = 8
+                        
+                        st.markdown(f"""
                             <div style='display: flex; align-items: baseline; gap: 8px; margin-bottom: -5px;'>
-                                <p style='font-size: 0.85rem; color: #aaa; margin: 0;'>📅 표시 날짜 개수</p>
+                                <p style='font-size: 0.95rem; color: #000000; font-weight: 800; margin: 0;'>📅 표시 날짜 개수 <span style='color: #28a745;'>(현재 : {st.session_state["date_count"]}일)</span></p>
                                 <span style='font-size: 0.8rem; color: #777; font-weight: 400;'>| 한 번에 보여줄 날짜 수를 조정합니다.</span>
                             </div>
                         """, unsafe_allow_html=True)
-                        date_count = st.slider("Count", 8, 12, 8, label_visibility="collapsed")
+                        date_count = st.slider("Count", 6, 12, value=st.session_state["date_count"], label_visibility="collapsed", key="date_count_slider_widget")
+                        st.session_state["date_count"] = date_count
                 
                 metric = 'rate' if '%' in metric_opt else 'area'
 

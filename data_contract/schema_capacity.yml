@@ -1,0 +1,20 @@
+plant_capacity:
+  columns:
+    plant:
+      type: integer
+      description: "동 번호 (1~5)"
+      required: true
+      enum: [1, 2, 3, 4, 5]
+    capacity_m2:
+      type: float
+      description: "동별 최대 적재 가능 면적"
+      required: true
+      min: 0
+    effective_from:
+      type: date
+      description: "유효 시작일 (ISO: YYYY-MM-DD)"
+      required: true
+    effective_to:
+      type: date
+      description: "유효 종료일 (ISO: YYYY-MM-DD)"
+      required: true
