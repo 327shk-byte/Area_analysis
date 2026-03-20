@@ -174,19 +174,36 @@ def load_sample_data():
     except:
         return None, None
 
-# --- 데이터 영구 저장 로직 (DRM 간섭 방지용 JSON 전환) ---
-# CSV 파일은 시스템 DRM에 의해 자동 암호화되어 새로고침 시 로드 실패할 수 있으므로 JSON 사용
-CAPA_FILE_JSON = "capacity_master.json"
-ORDERS_FILE_JSON = "orders_master.json"
+# --- 구글 시트 연동 설정 ---
+try:
+    from streamlit_gsheets import GSheetsConnection
+except ImportError:
+    # 라이브러리 설치 대기 시 로컬 모드로 전환
+    pass
+
+GSHEET_URL = "https://docs.google.com/spreadsheets/d/11JhawrE8mwdPekmldSPk--_yZ5DBOSapk8_tlyQZk-M/edit?usp=sharing"
 
 def save_capa_data(df):
-    """공장 마스터 정보를 JSON으로 저장 (DRM 회피)"""
+    """공장 마스터 정보를 구글 시트(인터넷)와 로컬(JSON) 모두에 저장"""
     try:
+        # 1. 로컬 저장 (DRM 회피용 백업)
         df.to_json(CAPA_FILE_JSON, orient="records", date_format="iso")
+        
+        # 2. 구글 시트 저장 (인터넷 영구 저장)
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        # 구글 시트는 형식이 엄격하므로 날짜를 텍스트로 변환하여 안전하게 저장
+        save_df = df.copy()
+        for col in ['effective_from', 'effective_to']:
+            save_df[col] = save_df[col].dt.strftime('%Y-%m-%d')
+            
+        conn.update(spreadsheet=GSHEET_URL, data=save_df)
         return True
     except Exception as e:
-        st.error(f"마스크 정보 저장 실패: {e}")
+        st.warning(f"인터넷 저장(구글 시트)에 실패했습니다. 로컬 파일에만 저장됩니다.\n원인: {e}")
         return False
+
+CAPA_FILE_JSON = "capacity_master.json"
+ORDERS_FILE_JSON = "orders_master.json"
 
 def save_orders_data(df):
     """업로드된 주문 데이터를 JSON으로 저장 (DRM 회피)"""
@@ -275,24 +292,32 @@ if "analysis_start" not in st.session_state or "analysis_end" not in st.session_
     if "analysis_end" not in st.session_state and "analysis_end" in config:
         st.session_state["analysis_end"] = to_date(config["analysis_end"])
 
-# [Senior Debug] 세션 상태 초기화 및 데이터 복구 (JSON 우선)
+# [Senior Debug] 세션 상태 초기화 및 데이터 복구 (구글 시트 우선)
 if "capa_data" not in st.session_state:
     df_c = None
-    if os.path.exists(CAPA_FILE_JSON):
-        try:
-            df_c = pd.read_json(CAPA_FILE_JSON)
-            for col in ['effective_from', 'effective_to']:
-                df_c[col] = pd.to_datetime(df_c[col])
-        except: pass
+    # 1순위: 인터넷(구글 시트)에서 가져오기
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df_c = conn.read(spreadsheet=GSHEET_URL)
+        for col in ['effective_from', 'effective_to']:
+            df_c[col] = pd.to_datetime(df_c[col])
+    except Exception as e:
+        # 2순위: 로컬 백업 파일에서 가져오기
+        if os.path.exists(CAPA_FILE_JSON):
+            try:
+                df_c = pd.read_json(CAPA_FILE_JSON)
+                for col in ['effective_from', 'effective_to']:
+                    df_c[col] = pd.to_datetime(df_c[col])
+            except: pass
     
     if df_c is None:
-        # JSON이 없으면 기존 CSV 시도 (초기 1회)
+        # 3순위: 기본 샘플 로드 (실패 시 긴급 생성)
         try:
-            df_c = pd.read_csv("capacity_sample.csv") # DRM 때문에 실패 가능성 있음
+            df_c = pd.read_csv("capacity_sample.csv")
             for col in ['effective_from', 'effective_to']:
-                df_c[col] = pd.to_datetime(df_c[col], errors='coerce')
+                    df_c[col] = pd.to_datetime(df_c[col], errors='coerce')
         except:
-            df_c = pd.DataFrame({
+             df_c = pd.DataFrame({
                 'plant': [1, 2, 3, 4, 5],
                 'total_area_m2': [1000.0] * 5,
                 'usage_rate': [100.0] * 5,
@@ -300,13 +325,6 @@ if "capa_data" not in st.session_state:
                 'effective_from': pd.to_datetime(['2000-01-01'] * 5),
                 'effective_to': pd.to_datetime(['2099-12-31'] * 5)
             })
-    
-    # [New Fields Guard] 기존 데이터에 새 필드가 없는 경우 추가
-    if 'total_area_m2' not in df_c.columns:
-        df_c['total_area_m2'] = df_c['capacity_m2']
-    if 'usage_rate' not in df_c.columns:
-        df_c['usage_rate'] = 100.0
-    
     st.session_state["capa_data"] = df_c
 
 # [무조건 1동~5동 규격 유지]
