@@ -517,7 +517,7 @@ with tab1:
         st.markdown(f"""
             <div style="display: flex; align-items: baseline; gap: 12px; margin-bottom: 5px;">
                 <h3 style="margin: 0; font-size: 1.35rem;">📥 데이터 업로드</h3>
-                <span style="color: #aaa; font-size: 0.95rem;">"생산관리일정표" 엑셀 파일을 기반으로 자동으로 동별 점유율을 계산_ #100도장(점유시작일)~#140포장(점유종료일)</span>
+                <span style="color: #aaa; font-size: 0.95rem;">"생산관리일정표" 엑셀 파일에서 자동으로 동별 점유율을 계산_ #100도장(시작일)~#140포장(종료일)</span>
             </div>
         """, unsafe_allow_html=True)
         orders_file_main = st.file_uploader('"생산관리일정표" 파일을 드래그하거나 클릭하여 업로드하세요.', 
