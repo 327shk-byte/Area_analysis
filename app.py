@@ -19,7 +19,10 @@ with t_col2:
     with st.popover("⋯", help="시스템 업데이트 기록 확인"):
         st.markdown("""
             <div style='font-size: 0.85rem; color: #555;'>
-                <p style='font-weight: 700; color: #000; font-size: 0.95rem; margin-bottom: 8px;'>📜 시스템 업데이트 로그</p>
+                <div style='display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px;'>
+                    <span style='font-weight: 700; color: #000; font-size: 0.95rem;'>📜 시스템 업데이트 로그</span>
+                    <span style='color: #888; font-size: 0.8rem;'>made by Seokgi.Kim</span>
+                </div>
                 <hr style='margin: 8px 0;'>
                 <p><strong>v1.1.0 (2026-03-31)</strong></p>
                 <ul style='padding-left: 20px; margin-top: 4px;'>
