@@ -780,29 +780,32 @@ with tab1:
                         st.write("<p style='font-size: 0.85rem; color: #aaa; margin-bottom: -5px;'>📏 표시 기준</p>", unsafe_allow_html=True)
                         metric_opt = st.radio("Metric", ["점유율 (%)", "점유면적 (㎡)"], horizontal=True, label_visibility="collapsed")
                     with col_m2:
-                        # [Persistence] 날짜 개수 세션 상태 관리 (기본값 6으로 변경)
-                        if "date_count" not in st.session_state:
-                            st.session_state["date_count"] = 6
-                        
-                        # [Dynamic Label] 실시간 업데이트를 위해 빈 공간(placeholder) 생성
-                        label_placeholder = st.empty()
-                        
-                        # 슬라이더에서 즉각적으로 상태를 받기 위한 설정
-                        date_count = st.slider(
-                            "Count", 6, 12, 
-                            value=st.session_state["date_count"], 
-                            label_visibility="collapsed", 
-                            key="date_count_slider_widget"
-                        )
-                        st.session_state["date_count"] = date_count
-                        
-                        # 슬라이더 값을 기반으로 상단 텍스트를 나중에 채움 (실시간 반영)
-                        label_placeholder.markdown(f"""
-                            <div style='display: flex; align-items: baseline; gap: 8px; margin-bottom: -5px;'>
-                                <p style='font-size: 0.95rem; color: #000000; font-weight: 800; margin: 0;'>📅 표시 날짜 개수 <span style='color: #28a745;'>(현재 : {date_count}일)</span></p>
-                                <span style='font-size: 0.8rem; color: #777; font-weight: 400;'>| 한 번에 보여줄 날짜 수를 조정합니다.</span>
-                            </div>
-                        """, unsafe_allow_html=True)
+                        # [User Request] 가로 폭 50% 축소를 위해 하위 컬럼으로 분리
+                        sub_col_s1, sub_col_s2 = st.columns([1, 1])
+                        with sub_col_s1:
+                            # [Persistence] 날짜 개수 세션 상태 관리 (기본값 6으로 변경)
+                            if "date_count" not in st.session_state:
+                                st.session_state["date_count"] = 6
+                            
+                            # [Dynamic Label] 실시간 업데이트를 위해 빈 공간(placeholder) 생성
+                            label_placeholder = st.empty()
+                            
+                            # 슬라이더에서 즉각적으로 상태를 받기 위한 설정
+                            date_count = st.slider(
+                                "Count", 6, 12, 
+                                value=st.session_state["date_count"], 
+                                label_visibility="collapsed", 
+                                key="date_count_slider_widget"
+                            )
+                            st.session_state["date_count"] = date_count
+                            
+                            # [User Request] 제목을 조금 더 위로 올려서 6 숫자가 잘 보이게 조정 (margin-bottom: 5px)
+                            label_placeholder.markdown(f"""
+                                <div style='display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; margin-top: -5px;'>
+                                    <p style='font-size: 0.95rem; color: #000000; font-weight: 800; margin: 0; white-space: nowrap;'>📅 표시 날짜 개수 <span style='color: #28a745;'>(현재 : {date_count}일)</span></p>
+                                    <span style='font-size: 0.75rem; color: #777; font-weight: 400; white-space: nowrap;'>| 조정</span>
+                                </div>
+                            """, unsafe_allow_html=True)
                 
                 metric = 'rate' if '%' in metric_opt else 'area'
 
@@ -812,7 +815,8 @@ with tab1:
                         valid_orders, clean_capa,
                         start_date=s_date, end_date=e_date,
                         mode=proc_mode, include_estimated=inc_est,
-                        granularity=gran, aggregation=agg
+                        granularity=gran, aggregation=agg,
+                        threshold=threshold
                     )
                     
                     daily_df = results["daily_occupancy"]
@@ -883,15 +887,15 @@ with tab1:
                         z_max = pivot_df.max().max()
                         z_max = max(z_max, 1.0) # 최소 100%까지는 표현
                         
-                        # 0.8(80%) 지점 계산
-                        p_80 = 0.8 / z_max
-                        p_50 = 0.5 / z_max
+                        # 동적 임계치 지점 계산
+                        p_thresh = threshold / z_max if z_max > 0 else 0.8
+                        p_50 = 0.5 / z_max if z_max > 0 else 0.5
                         
                         color_scale = [
                             [0, "#e8f5e9"],       # 0% : 연그린
-                            [p_50, "#fff9c4"],    # 50% : 연노랑
-                            [p_80 - 0.01, "#ffcc80"], # ~79% : 연주황
-                            [p_80, "#ff8a80"],    # 80% : 연빨강 (Key Threshold)
+                            [min(p_50, 0.99), "#fff9c4"],    # 50% : 연노랑
+                            [max(0, p_thresh - 0.01), "#ffcc80"], # 임계치 직전 : 연주황
+                            [min(p_thresh, 1.0), "#ff8a80"],    # 임계치 : 연빨강 (Key Threshold)
                             [1.0, "#e53935"]      # Max (100% or above) : 기본 빨강
                         ] if metric == 'rate' else "Viridis"
 
@@ -1008,6 +1012,14 @@ with tab1:
                             
                             if metric == 'rate':
                                 fig_line.update_layout(yaxis_tickformat=".0%")
+                                # 임계치 가이드라인 추가
+                                fig_line.add_hline(
+                                    y=threshold, 
+                                    line_dash="dash", 
+                                    line_color="red", 
+                                    annotation_text=f"임계치 ({int(threshold*100)}%)",
+                                    annotation_position="top right"
+                                )
                             
                             col_l1, col_l2 = st.columns([3, 1])
                             with col_l1:
@@ -1061,6 +1073,14 @@ with tab1:
                             
                             if metric == 'rate':
                                 fig_bar.update_layout(yaxis_tickformat=".0%")
+                                # 임계치 가이드라인 추가
+                                fig_bar.add_hline(
+                                    y=threshold, 
+                                    line_dash="dash", 
+                                    line_color="red", 
+                                    annotation_text=f"임계치 ({int(threshold*100)}%)",
+                                    annotation_position="top right"
+                                )
                             
                             col_b1, col_b2 = st.columns([3, 1])
                             with col_b1:
@@ -1102,19 +1122,19 @@ with tab1:
                             st.write(html_t2, unsafe_allow_html=True)
 
                         with col_r2:
-                            st.markdown("<p style='font-size: 1.0rem; font-weight: 700; margin-bottom: 8px;'>🚩 리스크 히스토리 (최근 6M)</p>", unsafe_allow_html=True)
-                            html_t3 = f'<table style="{table_css}"><thead><tr><th style="{th_style}">동</th><th style="{th_style}">80%↑</th><th style="{th_style}">연속</th><th style="{th_style}">Peak</th><th style="{th_style}">Status</th></tr></thead><tbody>'
+                            st.markdown(f"<p style='font-size: 1.0rem; font-weight: 700; margin-bottom: 8px;'>🚩 리스크 히스토리 (최근 6M)</p>", unsafe_allow_html=True)
+                            html_t3 = f'<table style="{table_css}"><thead><tr><th style="{th_style}">동</th><th style="{th_style}">{int(threshold*100)}%↑</th><th style="{th_style}">연속</th><th style="{th_style}">Peak</th><th style="{th_style}">Status</th></tr></thead><tbody>'
                             for _, row in threshold_history.iterrows():
                                 bar = make_progress_bar_html(row['highest_rate'])
                                 status_icon = "🔴" if "위험" in row["status"] else "🟡"
-                                html_t3 += f'<tr><td style="{td_style}">{row["plant"]}동</td><td style="{td_style}">{row["over80_days"]}</td><td style="{td_style}">{row["max_streak"]}</td><td style="{td_style}">{bar}</td><td style="{td_style}">{status_icon} {row["status"]}</td></tr>'
+                                html_t3 += f'<tr><td style="{td_style}">{row["plant"]}동</td><td style="{td_style}">{row["over_threshold_days"]}</td><td style="{td_style}">{row["max_streak"]}</td><td style="{td_style}">{bar}</td><td style="{td_style}">{status_icon} {row["status"]}</td></tr>'
                             html_t3 += "</tbody></table>"
                             st.write(html_t3, unsafe_allow_html=True)
 
                         with col_r3:
                             st.markdown("<p style='font-size: 1.0rem; font-weight: 700; margin-bottom: 8px;'>⚠️ 주요 과부하 구간 (주의 요망)</p>", unsafe_allow_html=True)
                             if metric == 'rate':
-                                risk_df = final_df[final_df[val_col] >= 0.8].sort_values(by=val_col, ascending=False).head(5)
+                                risk_df = final_df[final_df[val_col] >= threshold].sort_values(by=val_col, ascending=False).head(5)
                                 if not risk_df.empty:
                                     html_t1 = f'<table style="{table_css}"><thead><tr><th style="{th_style}">날짜</th><th style="{th_style}">동</th><th style="{th_style}">점유율</th></tr></thead><tbody>'
                                     for _, row in risk_df.iterrows():
@@ -1260,21 +1280,37 @@ with tab1:
 
         # --- [User Request] 종합 리스크 통합 리포트 추가 (맨 밑에 1줄로 통합) ---
         st.divider()
-        st.markdown("<p style='font-size: 1.25rem; font-weight: 700; color: #ffeb3b; margin-bottom: 10px;'>📋 종합 리스크 통합 리포트 (통계 요약)</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='font-size: 1.25rem; font-weight: 700; color: #000000; margin-bottom: 15px;'>📋 종합 리스크 통합 리포트 (통계 요약)</p>", unsafe_allow_html=True)
         try:
-            # 리스크 요약과 히스토리 사이드-바이-사이드 통합 (1줄 레포트)
+            # 리스크 요약과 히스토리 사이드-바이-사이드 통합 (1줄 레포트용 데이터 준비)
             combined_risk = pd.merge(risk_summary, threshold_history.drop(columns=['status']), on='plant')
-            combined_config = {
-                "plant": st.column_config.NumberColumn("공장(동)", format="%d동"),
-                "recent_max_rate": st.column_config.ProgressColumn("최근Max", format="%.1f%%", min_value=0, max_value=1),
-                "recent_avg_rate": st.column_config.NumberColumn("최근Avg", format="%.1f%%"),
-                "peak_month": st.column_config.TextColumn("Peak Month"),
-                "over80_days": st.column_config.NumberColumn("80%초과(일)"),
-                "max_streak": st.column_config.NumberColumn("최대연속(일)"),
-                "highest_rate": st.column_config.ProgressColumn("최고점유율", format="%.1f%%", min_value=0, max_value=1)
-            }
-            final_cols = ["plant", "recent_max_rate", "recent_avg_rate", "peak_month", "over80_days", "max_streak", "highest_rate"]
-            st.dataframe(combined_risk[final_cols], column_config=combined_config, width="stretch", hide_index=True)
+            
+            # HTML 테이블 스타일 정의 (더 넓고 가독성 있게)
+            html_rep = f'<table style="width: 100%; border-collapse: collapse; text-align: center; font-size: 0.9rem; color: #000000; border: 1px solid #ddd;">'
+            html_rep += f'<thead><tr style="background-color: #f8f9fa; border-bottom: 2px solid #333;">'
+            html_rep += f'<th style="{th_style}">공장(동)</th><th style="{th_style}">최근Max</th><th style="{th_style}">최근Avg</th>'
+            html_rep += f'<th style="{th_style}">Peak Month</th><th style="{th_style}">{int(threshold*100)}%초과(일)</th>'
+            html_rep += f'<th style="{th_style}">최대연속(일)</th><th style="{th_style}">최고점유율</th>'
+            html_rep += '</tr></thead><tbody>'
+            
+            for _, row in combined_risk.iterrows():
+                # 프로그레스 바 생성
+                max_bar = make_progress_bar_html(row['recent_max_rate'])
+                high_bar = make_progress_bar_html(row['highest_rate'])
+                avg_str = f"{int(row['recent_avg_rate']*100)}%"
+                
+                html_rep += f'<tr>'
+                html_rep += f'<td style="{td_style}; font-weight: 700;">{row["plant"]}동</td>'
+                html_rep += f'<td style="{td_style}">{max_bar}</td>'
+                html_rep += f'<td style="{td_style}">{avg_str}</td>'
+                html_rep += f'<td style="{td_style}">{row["peak_month"]}</td>'
+                html_rep += f'<td style="{td_style}">{row["over_threshold_days"]}</td>'
+                html_rep += f'<td style="{td_style}">{row["max_streak"]}</td>'
+                html_rep += f'<td style="{td_style}">{high_bar}</td>'
+                html_rep += '</tr>'
+            
+            html_rep += "</tbody></table>"
+            st.write(html_rep, unsafe_allow_html=True)
         except: pass
     else:
         st.info("데이터를 업로드하거나 샘플 데이터를 생성해 주세요.")
