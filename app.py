@@ -1850,23 +1850,26 @@ with tab3:
 
 with tab4:
     st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
-    st.info("🧪 **실험실: 히트맵 드릴다운(Drill-down) 테스트**\n\n히트맵의 특정 셀(날짜/동)을 클릭해 보세요. 하단에 해당 시점에 가동 중인 상세 오더 리스트가 나타납니다.")
+    st.info("🧪 **실험실: 히트맵 드릴다운(Drill-down) 테스트**\n\n히트맵의 특정 셀을 클릭하거나 아래의 메뉴에서 직접 날짜/동을 선택하여 상세 오더를 확인해 보세요.")
     
-    # 데이터 존재 여부 확인 (재사용)
+    # 세션 상태 초기화
+    if "drill_date_idx" not in st.session_state:
+        st.session_state["drill_date_idx"] = 0
+    if "drill_plant_idx" not in st.session_state:
+        st.session_state["drill_plant_idx"] = 0
+
+    # 데이터 존재 여부 확인
     if "orders_data" not in st.session_state or "capa_data" not in st.session_state:
         st.warning("분석을 위해 먼저 데이터를 업로드해주세요.")
     elif st.session_state["orders_data"] is None or st.session_state["capa_data"] is None:
         st.warning("분석을 위해 먼저 데이터를 업로드해주세요.")
     else:
-        # --- 내부 분석 로직 수행 (Tab 1과 동일한 기본 설정 사용) ---
+        # --- 내부 분석 로직 수행 (Tab 1 기반) ---
         validator = DataValidator()
         valid_orders, _, _ = validator.validate_orders(st.session_state["orders_data"])
         clean_capa, _ = validator.validate_capacity(st.session_state["capa_data"])
         
-        # 기본 옵션 (테스트용 고정/기존 설정 승계)
-        s_date, e_date = date(2026, 3, 30), date(2026, 6, 30) # 기본 범위
-        proc_mode, inc_est = 'plan', True
-        gran, agg = 'D', 'MAX'
+        s_date, e_date = date(2026, 3, 30), date(2026, 6, 30)
         threshold = st.session_state.get("saturation_threshold", 80) / 100
         date_count = st.session_state.get("date_count", 6)
         
@@ -1874,11 +1877,94 @@ with tab4:
         results = engine.calculate_daily_occupancy(
             valid_orders, clean_capa,
             start_date=s_date, end_date=e_date,
-            mode=proc_mode, include_estimated=inc_est,
-            granularity=gran, aggregation=agg,
+            mode='plan', include_estimated=True,
+            granularity='D', aggregation='MAX',
             threshold=threshold
         )
         final_df = results["final_df"]
+        
+        if not final_df.empty:
+            # 피벗 및 필터링
+            pivot_df = final_df.pivot(index='plant', columns='date', values='OCC_RATE_D')
+            valid_dates = [d for d in pivot_df.columns if d.weekday() < 5] # 주말 제외
+            pivot_df = pivot_df[valid_dates]
+            
+            if len(pivot_df.columns) > date_count:
+                pivot_df = pivot_df.iloc[:, :date_count]
+            
+            display_dates = pivot_df.columns.tolist()
+            new_cols = [f"{d.month}/{d.day}" for d in pivot_df.columns]
+            rev_date_map = dict(zip(new_cols, display_dates))
+            pivot_df.columns = new_cols
+            
+            # --- 보조 필터 UI ---
+            st.markdown("#### 🔎 상세 조회 조건 (히트맵 클릭 또는 수동 선택)")
+            f_col1, f_col2, f_col3 = st.columns([1, 1, 2])
+            
+            with f_col1:
+                sel_date_label = st.selectbox("📅 날짜 선택", options=new_cols, index=st.session_state["drill_date_idx"], key="sel_date_widget")
+            with f_col2:
+                plants_list = [f"{p}동" for p in pivot_df.index]
+                sel_plant_label = st.selectbox("🏢 생산 동 선택", options=plants_list, index=st.session_state["drill_plant_idx"], key="sel_plant_widget")
+            
+            # 히트맵 생성
+            fig_test = px.imshow(
+                pivot_df,
+                labels=dict(x="날짜", y="동", color="점유율"),
+                x=pivot_df.columns,
+                y=plants_list,
+                color_continuous_scale="RdYlGn_r",
+                zmin=0, zmax=1.0, aspect="auto"
+            )
+            fig_test.update_traces(
+                hovertemplate="날짜: %{x}<br>동: %{y}<br>점유율: %{z:.1%}<extra></extra>",
+                texttemplate="<b>%{z:.0%}</b>",
+                textfont=dict(size=16)
+            )
+            fig_test.update_layout(title="🖱️ 클릭 가능한 테스트 히트맵", height=400, clickmode='event+select')
+            
+            # 히트맵 차트 렌더링 (on_select 활용)
+            event_data = st.plotly_chart(fig_test, width="stretch", on_select="rerun", selection_mode="points")
+            
+            # --- 클릭 이벤트 동기화 ---
+            selected_points = event_data.get("selection", {}).get("points", [])
+            if selected_points:
+                point = selected_points[0]
+                new_date = point.get("x")
+                new_plant = point.get("y")
+                
+                # 세션 상태 업데이트 (인덱스 찾기)
+                if new_date in new_cols:
+                    st.session_state["drill_date_idx"] = new_cols.index(new_date)
+                if new_plant in plants_list:
+                    st.session_state["drill_plant_idx"] = plants_list.index(new_plant)
+                
+                # 강제 재실행으로 위젯 값 동기화
+                st.rerun()
+
+            # --- 최종 드릴다운 필터링 및 출력 ---
+            target_date = rev_date_map.get(sel_date_label)
+            target_plant = int(sel_plant_label.replace("동", ""))
+            
+            st.markdown(f"### 📋 {sel_plant_label} 상세 오더 내역 ({target_date.strftime('%Y-%m-%d')})")
+            
+            if not valid_orders.empty:
+                drill_df = valid_orders[
+                    (valid_orders['동'] == target_plant) &
+                    (valid_orders['도장_transformed'].dt.date <= target_date.date()) &
+                    (valid_orders['포장_transformed'].dt.date >= target_date.date())
+                ].copy()
+                
+                if not drill_df.empty:
+                    display_cols = ['SEQ', '고객사', '모델명', '수량', '차수', '도장_transformed', '포장_transformed']
+                    drill_df = drill_df[display_cols]
+                    drill_df.columns = ['순번', '고객사', '모델명', '수량', '차수', '시작(도장)', '종료(포장)']
+                    st.dataframe(drill_df, width="stretch", hide_index=True)
+                    st.caption(f"💡 총 {len(drill_df)}건의 오더가 가동 중입니다. (합계 수량: {drill_df['수량'].sum():,})")
+                else:
+                    st.info("해당 시점에 진행 중인 상세 오더 정보가 없습니다.")
+        else:
+            st.warning("분석 결과 데이터가 없습니다.")
         
         if not final_df.empty:
             # 피벗 및 필터링 (Tab 1 로직 재사용)
