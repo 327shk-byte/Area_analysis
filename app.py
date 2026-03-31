@@ -1949,16 +1949,27 @@ with tab4:
             st.markdown(f"### 📋 {sel_plant_label} 상세 오더 내역 ({target_date.strftime('%Y-%m-%d')})")
             
             if not valid_orders.empty:
+                # 내부 표준 컬럼명(plant, start_in, end_out)을 사용하여 필터링
                 drill_df = valid_orders[
-                    (valid_orders['동'] == target_plant) &
-                    (valid_orders['도장_transformed'].dt.date <= target_date.date()) &
-                    (valid_orders['포장_transformed'].dt.date >= target_date.date())
+                    (valid_orders['plant'] == target_plant) &
+                    (valid_orders['start_in'].dt.date <= target_date.date()) &
+                    (valid_orders['end_out'].dt.date >= target_date.date())
                 ].copy()
                 
                 if not drill_df.empty:
-                    display_cols = ['SEQ', '고객사', '모델명', '수량', '차수', '도장_transformed', '포장_transformed']
-                    drill_df = drill_df[display_cols]
-                    drill_df.columns = ['순번', '고객사', '모델명', '수량', '차수', '시작(도장)', '종료(포장)']
+                    # 표시용 컬럼 정리 (내부 표준 명칭 사용)
+                    display_cols = ['order_id', 'customer', 'model', 'qty', 'start_in', 'end_out']
+                    # 존재하는 컬럼만 필터링 (방어적 코드)
+                    actual_display_cols = [c for c in display_cols if c in drill_df.columns]
+                    drill_df = drill_df[actual_display_cols]
+                    
+                    # 한글 라벨 매핑
+                    label_map = {
+                        'order_id': '순번', 'customer': '고객사', 'model': '모델명', 
+                        'qty': '수량', 'start_in': '시작(도장)', 'end_out': '종료(포장)'
+                    }
+                    drill_df.columns = [label_map.get(c, c) for c in drill_df.columns]
+                    
                     st.dataframe(drill_df, width="stretch", hide_index=True)
                     st.caption(f"💡 총 {len(drill_df)}건의 오더가 가동 중입니다. (합계 수량: {drill_df['수량'].sum():,})")
                 else:
