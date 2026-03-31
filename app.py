@@ -540,16 +540,16 @@ st.markdown("""
         text-align: center !important;
         justify-content: center !important;
     }
-    /* 표 헤더 색상 및 가운데 정렬 */
-    div[data-testid="stDataFrame"] th div {
-        display: flex !important;
-        justify-content: center !important;
+    /* 4번째 탭(테스트용) 글씨 크기 축소 */
+    div[data-testid="stTabs"] button[id^="tabs-bui"][id$="-tab-3"] div p {
+        font-size: 0.8rem !important;
+        color: #888 !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # UI 구성 (Tabs)
-tab1, tab2, tab3 = st.tabs(["📊 공장 점유율 현황", "🧪 조건 설정 시뮬레이션", "🔮 AI 점유율 예측"])
+tab1, tab2, tab3, tab4 = st.tabs(["📊 공장 점유율 현황", "🧪 조건 설정 시뮬레이션", "🔮 AI 점유율 예측", "🧪 공장 점유율 현황_test"])
 
 with tab1:
     st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
@@ -1847,3 +1847,113 @@ with tab3:
                                     for k, v in metrics.items()
                                 ])
                                 st.dataframe(metrics_df, width="stretch")
+
+with tab4:
+    st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
+    st.info("🧪 **실험실: 히트맵 드릴다운(Drill-down) 테스트**\n\n히트맵의 특정 셀(날짜/동)을 클릭해 보세요. 하단에 해당 시점에 가동 중인 상세 오더 리스트가 나타납니다.")
+    
+    # 데이터 존재 여부 확인 (재사용)
+    if "orders_data" not in st.session_state or "capa_data" not in st.session_state:
+        st.warning("분석을 위해 먼저 데이터를 업로드해주세요.")
+    elif st.session_state["orders_data"] is None or st.session_state["capa_data"] is None:
+        st.warning("분석을 위해 먼저 데이터를 업로드해주세요.")
+    else:
+        # --- 내부 분석 로직 수행 (Tab 1과 동일한 기본 설정 사용) ---
+        validator = DataValidator()
+        valid_orders, _, _ = validator.validate_orders(st.session_state["orders_data"])
+        clean_capa, _ = validator.validate_capacity(st.session_state["capa_data"])
+        
+        # 기본 옵션 (테스트용 고정/기존 설정 승계)
+        s_date, e_date = date(2026, 3, 30), date(2026, 6, 30) # 기본 범위
+        proc_mode, inc_est = 'plan', True
+        gran, agg = 'D', 'MAX'
+        threshold = st.session_state.get("saturation_threshold", 80) / 100
+        date_count = st.session_state.get("date_count", 6)
+        
+        engine = OccupancyEngine()
+        results = engine.calculate_daily_occupancy(
+            valid_orders, clean_capa,
+            start_date=s_date, end_date=e_date,
+            mode=proc_mode, include_estimated=inc_est,
+            granularity=gran, aggregation=agg,
+            threshold=threshold
+        )
+        final_df = results["final_df"]
+        
+        if not final_df.empty:
+            # 피벗 및 필터링 (Tab 1 로직 재사용)
+            pivot_df = final_df.pivot(index='plant', columns='date', values='OCC_RATE_D')
+            valid_dates = [d for d in pivot_df.columns if d.weekday() < 5] # 주말 제외
+            pivot_df = pivot_df[valid_dates]
+            
+            # 슬라이딩 윈도우 (N일치)
+            if len(pivot_df.columns) > date_count:
+                pivot_df = pivot_df.iloc[:, :date_count]
+            
+            display_dates = pivot_df.columns.tolist()
+            
+            # X축 라벨 포맷팅 및 역방향 매핑용 딕셔너리
+            new_cols = [f"{d.month}/{d.day}" for d in pivot_df.columns]
+            rev_date_map = dict(zip(new_cols, display_dates))
+            pivot_df.columns = new_cols
+            
+            # 히트맵 생성
+            fig_test = px.imshow(
+                pivot_df,
+                labels=dict(x="날짜", y="동", color="점유율"),
+                x=pivot_df.columns,
+                y=[f"{p}동" for p in pivot_df.index],
+                color_continuous_scale="RdYlGn_r", # 테스트용 다른 배색
+                zmin=0, zmax=1.0, aspect="auto"
+            )
+            fig_test.update_traces(
+                hovertemplate="날짜: %{x}<br>동: %{y}<br>점유율: %{z:.1%}<extra></extra>",
+                texttemplate="<b>%{z:.0%}</b>",
+                textfont=dict(size=16)
+            )
+            fig_test.update_layout(title="🖱️ 클릭 가능한 테스트 히트맵 (날짜/동 상호작용)", height=450)
+            
+            # --- [CORE] 인터랙티브 차트 렌더링 및 이벤트 캡처 ---
+            # selection_mode="point"를 사용하여 클릭 이벤트를 감지합니다.
+            event_data = st.plotly_chart(fig_test, width="stretch", on_select="rerun", selection_mode="points")
+            
+            # --- 드릴다운 결과 표시 ---
+            selected_points = event_data.get("selection", {}).get("points", [])
+            
+            if selected_points:
+                point = selected_points[0]
+                sel_date_label = point.get("x")
+                sel_plant_label = point.get("y")
+                
+                # 라벨에서 실제 값 추출
+                target_date = rev_date_map.get(sel_date_label)
+                target_plant = int(sel_plant_label.replace("동", ""))
+                
+                st.markdown(f"### 🔍 상세 오더 내역 ({sel_plant_label}, {target_date.strftime('%Y-%m-%d')})")
+                
+                # 원본 데이터에서 해당 날짜에 해당 공장에 걸쳐 있는 오더 필터링
+                if not valid_orders.empty:
+                    # 날짜 비교를 위해 오더 데이터의 변환된 날짜 컬럼 사용
+                    drill_df = valid_orders[
+                        (valid_orders['동'] == target_plant) &
+                        (valid_orders['도장_transformed'].dt.date <= target_date.date()) &
+                        (valid_orders['포장_transformed'].dt.date >= target_date.date())
+                    ].copy()
+                    
+                    if not drill_df.empty:
+                        # 표시용 컬럼 정리
+                        display_cols = ['SEQ', '고객사', '모델명', '수량', '차수', '도장_transformed', '포장_transformed']
+                        drill_df = drill_df[display_cols]
+                        drill_df.columns = ['순번', '고객사', '모델명', '수량', '차수', '시작(도장)', '종료(포장)']
+                        
+                        st.dataframe(drill_df, width="stretch", hide_index=True)
+                        
+                        # 간단한 요약
+                        total_qty = drill_df['수량'].sum()
+                        st.caption(f"💡 총 {len(drill_df)}건의 오더가 진행 중이며, 합계 수량은 {total_qty:,} 입니다.")
+                    else:
+                        st.info("해당 시점에 진행 중인 상세 오더 정보가 없습니다.")
+            else:
+                st.info("💡 위 히트맵의 숫자 셀을 클릭하면 상세 내역이 여기에 나타납니다.")
+        else:
+            st.warning("분석 결과 데이터가 없습니다.")
