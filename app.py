@@ -639,7 +639,7 @@ with tab1:
             # 상세 결과 보기 (정렬 및 필터링 기능 추가)
             st.dataframe(
                 full_processed, 
-                use_container_width=True,
+                width="stretch",
                 height=400
             )
             
@@ -713,13 +713,13 @@ with tab1:
                         # 1. 퀵 프리셋 버튼
                         st.write("<p style='font-size: 0.85rem; color: #aaa; margin-bottom: 5px;'>퀵 기간 설정</p>", unsafe_allow_html=True)
                         q1, q2, q3 = st.columns(3)
-                        if q1.button("📅 이번달", use_container_width=True, key="btn_this_month"):
+                        if q1.button("📅 이번달", width="stretch", key="btn_this_month"):
                             import calendar
                             s = today.replace(day=1)
                             _, last_day = calendar.monthrange(today.year, today.month)
                             e = today.replace(day=last_day)
                             update_dates(s, e); st.rerun()
-                        if q2.button("🗓️ 다음 3개월", use_container_width=True, key="btn_next_3m"):
+                        if q2.button("🗓️ 다음 3개월", width="stretch", key="btn_next_3m"):
                             import calendar
                             s = today.replace(day=1)
                             target_month = today.month + 2
@@ -728,7 +728,7 @@ with tab1:
                             _, last_day = calendar.monthrange(target_year, target_month)
                             e = date(target_year, target_month, last_day)
                             update_dates(s, e); st.rerun()
-                        if q3.button("🌍 올해 전체", use_container_width=True, key="btn_full_year"):
+                        if q3.button("🌍 올해 전체", width="stretch", key="btn_full_year"):
                             update_dates(date(today.year, 1, 1), date(today.year, 12, 31)); st.rerun()
 
                         # 2. 날짜 직접 입력
@@ -962,7 +962,7 @@ with tab1:
                                     <b>{clean_gran}·{clean_agg}</b>으로 동별 <b>{metric_opt}</b>을 분석 중입니다.
                                 </div>
                             """, unsafe_allow_html=True)
-                            st.plotly_chart(fig_hm, use_container_width=True)
+                            st.plotly_chart(fig_hm, width="stretch")
                         
                         # 추가 시각화 차트
                         st.subheader("📈 추가 시각화")
@@ -1011,7 +1011,7 @@ with tab1:
                             
                             col_l1, col_l2 = st.columns([3, 1])
                             with col_l1:
-                                st.plotly_chart(fig_line, use_container_width=True)
+                                st.plotly_chart(fig_line, width="stretch")
                         else:
                             # 바 차트
                             bar_df = final_df.copy()
@@ -1064,7 +1064,7 @@ with tab1:
                             
                             col_b1, col_b2 = st.columns([3, 1])
                             with col_b1:
-                                st.plotly_chart(fig_bar, use_container_width=True)
+                                st.plotly_chart(fig_bar, width="stretch")
                         
                         # --- [User Request] 리스크 관련 3개 섹션 순서 변경 및 가로 배치 ---
                         st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
@@ -1274,7 +1274,7 @@ with tab1:
                 "highest_rate": st.column_config.ProgressColumn("최고점유율", format="%.1f%%", min_value=0, max_value=1)
             }
             final_cols = ["plant", "recent_max_rate", "recent_avg_rate", "peak_month", "over80_days", "max_streak", "highest_rate"]
-            st.dataframe(combined_risk[final_cols], column_config=combined_config, use_container_width=True, hide_index=True)
+            st.dataframe(combined_risk[final_cols], column_config=combined_config, width="stretch", hide_index=True)
         except: pass
     else:
         st.info("데이터를 업로드하거나 샘플 데이터를 생성해 주세요.")
@@ -1357,7 +1357,7 @@ with tab2:
         # 시나리오 테이블
         scenario_df = pd.DataFrame(st.session_state["virtual_orders"])
         st.dataframe(scenario_df[["order_id", "customer", "model", "qty", "plant", "area_m2_unit", "start_in", "end_out"]], 
-                     use_container_width=True)
+                     width="stretch")
         
         # 시나리오 저장 및 불러오기
         col1, col2 = st.columns(2)
@@ -1530,7 +1530,7 @@ with tab2:
                             hovermode="x unified"
                         )
                         
-                        st.plotly_chart(fig_compare, use_container_width=True)
+                        st.plotly_chart(fig_compare, width="stretch")
                         
                         # 변화량 히트맵
                         delta_df_filtered = delta_df[valid_dates].copy()
@@ -1570,7 +1570,7 @@ with tab2:
                                 coloraxis_colorbar=dict(tickformat="+.1%")
                             )
                             
-                            st.plotly_chart(fig_delta, use_container_width=True)
+                            st.plotly_chart(fig_delta, width="stretch")
         
         # 시나리오 초기화 버튼
         if st.button("시나리오 초기화"):
@@ -1751,7 +1751,7 @@ with tab3:
                             )
                             fig_forecast.update_xaxes(title_text="주간(Week) 날짜", row=len(plants), col=1)
                             
-                            st.plotly_chart(fig_forecast, use_container_width=True)
+                            st.plotly_chart(fig_forecast, width="stretch")
                             
                             # 위험 기간 식별
                             risk_periods = forecast_engine.evaluate_risk_periods(forecast_df, threshold)
@@ -1771,7 +1771,7 @@ with tab3:
                                 risk_summary['종료일'] = risk_summary['종료일'].dt.strftime('%Y-%m-%d')
                                 risk_summary['최대점유율'] = risk_summary['최대점유율'].apply(lambda x: f"{x:.1%}")
                                 
-                                st.dataframe(risk_summary, use_container_width=True)
+                                st.dataframe(risk_summary, width="stretch")
                             else:
                                 st.success("예측 기간 내에 위험 임계치를 초과하는 기간이 없습니다.")
                             
@@ -1784,4 +1784,4 @@ with tab3:
                                      "RMSE": v.get("rmse", "N/A")}
                                     for k, v in metrics.items()
                                 ])
-                                st.dataframe(metrics_df, use_container_width=True)
+                                st.dataframe(metrics_df, width="stretch")
