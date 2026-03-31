@@ -11,7 +11,30 @@ from datetime import datetime, date # [Fix] Explicit import
 
 st.set_page_config(page_title="공장 점유 현황 시뮬레이터", layout="wide", initial_sidebar_state="collapsed")
 
-st.title("🏭 공장 점유율 현황 시스템")
+# --- 상단 타이틀 및 업데이트 로그 (작고 눈에 띄지 않게) ---
+t_col1, t_col2 = st.columns([0.88, 0.12], vertical_alignment="bottom")
+with t_col1:
+    st.markdown("<h1 style='margin-bottom: 0;'>🏭 공장 점유율 현황 시스템</h1>", unsafe_allow_html=True)
+with t_col2:
+    with st.popover("⋯", help="시스템 업데이트 기록 확인"):
+        st.markdown("""
+            <div style='font-size: 0.85rem; color: #555;'>
+                <p style='font-weight: 700; color: #000; font-size: 0.95rem; margin-bottom: 8px;'>📜 시스템 업데이트 로그</p>
+                <hr style='margin: 8px 0;'>
+                <p><strong>v1.1.0 (2026-03-31)</strong></p>
+                <ul style='padding-left: 20px; margin-top: 4px;'>
+                    <li>🚩 포화 임계치(%) 가변 분석 엔진 연동</li>
+                    <li>📊 리스크 히스토리 및 종합 리포트 동적 업데이트</li>
+                    <li>🎨 UI/UX 고도화 (슬라이더 폭 조정, 제목 가시성 개선)</li>
+                    <li>🐛 데이터 정렬 및 KeyError 오류 수정</li>
+                    <li>🚀 실시간 클라우드 배포 최적화</li>
+                </ul>
+                <p><strong>v1.0.0 (2026-03-31)</strong></p>
+                <ul style='padding-left: 20px; margin-top: 4px;'>
+                    <li>🚀 시스템 초기 릴리즈</li>
+                </ul>
+            </div>
+        """, unsafe_allow_html=True)
 
 # --- 데이터 로드 함수 ---
 # --- 데이터 로드 함수 ---
