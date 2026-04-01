@@ -1933,14 +1933,28 @@ with tab4:
             with f_col2:
                 sel_plant_label = st.selectbox("🏢 생산 동 선택", options=plants_list, key="sel_plant_widget")
             
-            # 히트맵 생성 (YlOrRd 컬러 스케일 적용)
+            # 히트맵 생성 (Tab 1과 동일한 동적 컬러 스케일 적용)
+            z_max = pivot_df.max().max()
+            z_max = max(z_max, 1.0)
+            
+            p_thresh = threshold / z_max if z_max > 0 else 0.8
+            p_50 = 0.5 / z_max if z_max > 0 else 0.5
+            
+            color_scale = [
+                [0, "#e8f5e9"],
+                [min(p_50, 0.99), "#fff9c4"],
+                [max(0, p_thresh - 0.01), "#ffcc80"],
+                [min(p_thresh, 1.0), "#ff8a80"],
+                [1.0, "#e53935"]
+            ]
+            
             fig_test = px.imshow(
                 pivot_df,
                 labels=dict(x="시간 축", y="생산 동", color="점유율 (%)"),
                 x=pivot_df.columns,
                 y=plants_list,
-                color_continuous_scale="YlOrRd",
-                zmin=0, zmax=1.0, aspect="auto"
+                color_continuous_scale=color_scale,
+                zmin=0, zmax=z_max, aspect="auto"
             )
             fig_test.update_traces(
                 hovertemplate="시간 축: %{x}<br>동: %{y}<br>평균 점유율: %{z:.1%}<extra></extra>",
@@ -1982,7 +1996,7 @@ with tab4:
                 
                 if not drill_df.empty:
                     # 표시용 컬럼 정리 (PJT 추가)
-                    display_cols = ['order_id', 'customer', 'pjt', 'model', 'qty', 'start_in', 'end_out']
+                    display_cols = ['order_id', 'customer', 'pjt', 'model', 'qty', 'area_m2_unit', 'start_in', 'end_out']
                     # 존재하는 컬럼만 필터링 (방어적 코드)
                     actual_display_cols = [c for c in display_cols if c in drill_df.columns]
                     drill_df = drill_df[actual_display_cols]
@@ -1990,14 +2004,14 @@ with tab4:
                     # 한글 라벨 매핑
                     label_map = {
                         'order_id': '순번', 'customer': '고객사', 'pjt': 'PJT명', 'model': '모델명', 
-                        'qty': '수량', 'start_in': '시작(도장)', 'end_out': '종료(포장)'
+                        'qty': '수량', 'area_m2_unit': '면적', 'start_in': '시작(도장)', 'end_out': '종료(포장)'
                     }
                     drill_df.columns = [label_map.get(c, c) for c in drill_df.columns]
                     
                     # 데이터 타입 및 날짜 형식 보정 (PyArrow 에러 방지용 명시적 형변환)
                     for col in ['순번', 'PJT명', '고객사', '모델명']:
                         if col in drill_df.columns:
-                            drill_df[col] = drill_df[col].astype("string")
+                            drill_df[col] = drill_df[col].apply(lambda x: str(x) if pd.notna(x) else '')
                     
                     for col in ['시작(도장)', '종료(포장)']:
                         if col in drill_df.columns:
@@ -2005,6 +2019,9 @@ with tab4:
                     
                     if '수량' in drill_df.columns:
                         drill_df['수량'] = pd.to_numeric(drill_df['수량'], errors='coerce').fillna(0).astype("Int64")
+                    
+                    if '면적' in drill_df.columns:
+                        drill_df['면적'] = pd.to_numeric(drill_df['면적'], errors='coerce').fillna(0).astype("Int64")
                     
                     # 가운데 정렬 및 간격 조정을 위해 st.table 사용 (CSS와 연동되어 가운데 정렬 보장)
                     # 인덱스가 혼합 타입일 경우 발생하는 오류를 방지하기 위해 reset_index(drop=True) 적용
