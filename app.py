@@ -7,7 +7,7 @@ from src.validator import DataValidator
 from src.occupancy_engine import OccupancyEngine
 from src.transformer import DataTransformer
 from src.forecast_engine import ForecastEngine, ForecastParams
-from datetime import datetime, date # [Fix] Explicit import
+from datetime import datetime, date, timedelta # [Fix] Explicit import
 
 st.set_page_config(page_title="공장 점유 현황 시뮬레이터", layout="wide", initial_sidebar_state="collapsed")
 
@@ -24,6 +24,11 @@ with t_col2:
                     <span style='color: #888; font-size: 0.8rem;'>made by Seokgi.Kim</span>
                 </div>
                 <hr style='margin: 8px 0;'>
+                <p><strong>v1.2.0 (2026-04-01)</strong></p>
+                <ul style='padding-left: 20px; margin-top: 4px;'>
+                    <li>🔄 화면 드릴다운 동기화 오류 완전 수정 (히트맵 클릭 시 상세내역 갱신)</li>
+                    <li>🔨 상세 내역 조회 시 발생하는 직렬화 오류(ArrowTypeError) 해결</li>
+                </ul>
                 <p><strong>v1.1.0 (2026-03-31)</strong></p>
                 <ul style='padding-left: 20px; margin-top: 4px;'>
                     <li>🚩 포화 임계치(%) 가변 분석 엔진 연동</li>
@@ -1864,7 +1869,8 @@ with tab4:
     elif st.session_state["orders_data"] is None or st.session_state["capa_data"] is None:
         st.warning("분석을 위해 먼저 데이터를 업로드해주세요.")
     else:
-        # --- 내부 분석 로직 수행 (Tab 1 기반) ---
+
+        # 내부 분석 로직 수행 (Tab 1 기반)
         validator = DataValidator()
         valid_orders, _, _ = validator.validate_orders(st.session_state["orders_data"])
         clean_capa, _ = validator.validate_capacity(st.session_state["capa_data"])
@@ -1878,179 +1884,135 @@ with tab4:
             valid_orders, clean_capa,
             start_date=s_date, end_date=e_date,
             mode='plan', include_estimated=True,
-            granularity='D', aggregation='MAX',
+            granularity='W', aggregation='AVG',
             threshold=threshold
         )
         final_df = results["final_df"]
         
         if not final_df.empty:
             # 피벗 및 필터링
-            pivot_df = final_df.pivot(index='plant', columns='date', values='OCC_RATE_D')
-            valid_dates = [d for d in pivot_df.columns if d.weekday() < 5] # 주말 제외
-            pivot_df = pivot_df[valid_dates]
+            pivot_df = final_df.pivot(index='plant', columns='date', values='OCC_RATE_WAVG')
             
+            # 주차별 데이터 상위 N개 주차만 표시
             if len(pivot_df.columns) > date_count:
                 pivot_df = pivot_df.iloc[:, :date_count]
             
             display_dates = pivot_df.columns.tolist()
-            new_cols = [f"{d.month}/{d.day}" for d in pivot_df.columns]
+            # X축 라벨 형식 변경: M/D(NW) -> 예: 3/30(14W)
+            new_cols = [f"{d.month}/{d.day}({d.isocalendar()[1]}W)" for d in pivot_df.columns]
             rev_date_map = dict(zip(new_cols, display_dates))
             pivot_df.columns = new_cols
             
+            plants_list = [f"{p}동" for p in pivot_df.index]
+
+            # --- [CORE] 클릭 이벤트 기반 상태 업데이트 (selectbox 직접 업데이트) ---
+            if "heatmap_test" in st.session_state and st.session_state["heatmap_test"].get("selection"):
+                selected_points = st.session_state["heatmap_test"]["selection"].get("points", [])
+                if selected_points:
+                    point = selected_points[0]
+                    sel_x = point.get("x")
+                    sel_y = point.get("y")
+                    
+                    click_sig = f"{sel_x}_{sel_y}"
+                    # 히트맵의 클릭 발생(값이 변경) 시에만 위젯을 강제 업데이트 (수동 선택 시 덮어쓰기 방지)
+                    if st.session_state.get("last_heatmap_click") != click_sig:
+                        if sel_x in new_cols:
+                            st.session_state["sel_date_widget"] = sel_x
+                        if sel_y in plants_list:
+                            st.session_state["sel_plant_widget"] = sel_y
+                        st.session_state["last_heatmap_click"] = click_sig
+                else:
+                    st.session_state["last_heatmap_click"] = None
+
             # --- 보조 필터 UI ---
             st.markdown("#### 🔎 상세 조회 조건 (히트맵 클릭 또는 수동 선택)")
             f_col1, f_col2, f_col3 = st.columns([1, 1, 2])
             
             with f_col1:
-                sel_date_label = st.selectbox("📅 날짜 선택", options=new_cols, index=st.session_state["drill_date_idx"], key="sel_date_widget")
+                sel_date_label = st.selectbox("📅 날짜 선택", options=new_cols, key="sel_date_widget")
             with f_col2:
-                plants_list = [f"{p}동" for p in pivot_df.index]
-                sel_plant_label = st.selectbox("🏢 생산 동 선택", options=plants_list, index=st.session_state["drill_plant_idx"], key="sel_plant_widget")
+                sel_plant_label = st.selectbox("🏢 생산 동 선택", options=plants_list, key="sel_plant_widget")
             
-            # 히트맵 생성
+            # 히트맵 생성 (YlOrRd 컬러 스케일 적용)
             fig_test = px.imshow(
                 pivot_df,
-                labels=dict(x="날짜", y="동", color="점유율"),
+                labels=dict(x="시간 축", y="생산 동", color="점유율 (%)"),
                 x=pivot_df.columns,
                 y=plants_list,
-                color_continuous_scale="RdYlGn_r",
+                color_continuous_scale="YlOrRd",
                 zmin=0, zmax=1.0, aspect="auto"
             )
             fig_test.update_traces(
-                hovertemplate="날짜: %{x}<br>동: %{y}<br>점유율: %{z:.1%}<extra></extra>",
+                hovertemplate="시간 축: %{x}<br>동: %{y}<br>평균 점유율: %{z:.1%}<extra></extra>",
                 texttemplate="<b>%{z:.0%}</b>",
-                textfont=dict(size=16)
+                textfont=dict(size=15, color="black")
             )
-            fig_test.update_layout(title="🖱️ 클릭 가능한 테스트 히트맵", height=400, clickmode='event+select')
+            fig_test.update_layout(
+                title="<b>동별 점유율 (%) 현황 (단위: 주별 (Week), 평균 (AVG))</b>",
+                xaxis_title="시간 축",
+                yaxis_title="생산 동",
+                xaxis=dict(tickfont=dict(size=13, color="black")),
+                yaxis=dict(tickfont=dict(size=13, color="black")),
+                height=450,
+                clickmode='event+select'
+            )
             
             # 히트맵 차트 렌더링 (on_select 활용)
-            event_data = st.plotly_chart(fig_test, width="stretch", on_select="rerun", selection_mode="points")
-            
-            # --- 클릭 이벤트 동기화 ---
-            selected_points = event_data.get("selection", {}).get("points", [])
-            if selected_points:
-                point = selected_points[0]
-                new_date = point.get("x")
-                new_plant = point.get("y")
-                
-                # 세션 상태 업데이트 (인덱스 찾기)
-                if new_date in new_cols:
-                    st.session_state["drill_date_idx"] = new_cols.index(new_date)
-                if new_plant in plants_list:
-                    st.session_state["drill_plant_idx"] = plants_list.index(new_plant)
-                
-                # 강제 재실행으로 위젯 값 동기화
-                st.rerun()
+            st.plotly_chart(fig_test, width="stretch", on_select="rerun", selection_mode="points", key="heatmap_test")
 
             # --- 최종 드릴다운 필터링 및 출력 ---
             target_date = rev_date_map.get(sel_date_label)
             target_plant = int(sel_plant_label.replace("동", ""))
             
-            st.markdown(f"### 📋 {sel_plant_label} 상세 오더 내역 ({target_date.strftime('%Y-%m-%d')})")
+            # 주간 단위 보기이므로, 선택한 날짜(월요일)로부터 7일간의 범위를 산정
+            week_start = target_date.date()
+            week_end = week_start + timedelta(days=6)
+            week_num = week_start.isocalendar()[1]
+            
+            st.markdown(f"### 📋 상세 계획 내역 ({sel_plant_label}, {week_num}주차 {week_start.strftime('%Y-%m-%d')}~{week_end.strftime('%Y-%m-%d')})")
             
             if not valid_orders.empty:
                 # 내부 표준 컬럼명(plant, start_in, end_out)을 사용하여 필터링
+                # 클릭한 주 동안 단 하루라도 걸쳐 있는 모든 오더를 필터링
                 drill_df = valid_orders[
                     (valid_orders['plant'] == target_plant) &
-                    (valid_orders['start_in'].dt.date <= target_date.date()) &
-                    (valid_orders['end_out'].dt.date >= target_date.date())
+                    (valid_orders['start_in'].dt.date <= week_end) &
+                    (valid_orders['end_out'].dt.date >= week_start)
                 ].copy()
                 
                 if not drill_df.empty:
-                    # 표시용 컬럼 정리 (내부 표준 명칭 사용)
-                    display_cols = ['order_id', 'customer', 'model', 'qty', 'start_in', 'end_out']
+                    # 표시용 컬럼 정리 (PJT 추가)
+                    display_cols = ['order_id', 'customer', 'pjt', 'model', 'qty', 'start_in', 'end_out']
                     # 존재하는 컬럼만 필터링 (방어적 코드)
                     actual_display_cols = [c for c in display_cols if c in drill_df.columns]
                     drill_df = drill_df[actual_display_cols]
                     
                     # 한글 라벨 매핑
                     label_map = {
-                        'order_id': '순번', 'customer': '고객사', 'model': '모델명', 
+                        'order_id': '순번', 'customer': '고객사', 'pjt': 'PJT명', 'model': '모델명', 
                         'qty': '수량', 'start_in': '시작(도장)', 'end_out': '종료(포장)'
                     }
                     drill_df.columns = [label_map.get(c, c) for c in drill_df.columns]
                     
-                    st.dataframe(drill_df, width="stretch", hide_index=True)
+                    # 데이터 타입 및 날짜 형식 보정 (PyArrow 에러 방지용 명시적 형변환)
+                    for col in ['순번', 'PJT명', '고객사', '모델명']:
+                        if col in drill_df.columns:
+                            drill_df[col] = drill_df[col].astype("string")
+                    
+                    for col in ['시작(도장)', '종료(포장)']:
+                        if col in drill_df.columns:
+                            drill_df[col] = pd.to_datetime(drill_df[col]).dt.strftime('%Y-%m-%d')
+                    
+                    if '수량' in drill_df.columns:
+                        drill_df['수량'] = pd.to_numeric(drill_df['수량'], errors='coerce').fillna(0).astype("Int64")
+                    
+                    # 가운데 정렬 및 간격 조정을 위해 st.table 사용 (CSS와 연동되어 가운데 정렬 보장)
+                    # 인덱스가 혼합 타입일 경우 발생하는 오류를 방지하기 위해 reset_index(drop=True) 적용
+                    st.table(drill_df.reset_index(drop=True))
                     st.caption(f"💡 총 {len(drill_df)}건의 오더가 가동 중입니다. (합계 수량: {drill_df['수량'].sum():,})")
                 else:
                     st.info("해당 시점에 진행 중인 상세 오더 정보가 없습니다.")
         else:
             st.warning("분석 결과 데이터가 없습니다.")
         
-        if not final_df.empty:
-            # 피벗 및 필터링 (Tab 1 로직 재사용)
-            pivot_df = final_df.pivot(index='plant', columns='date', values='OCC_RATE_D')
-            valid_dates = [d for d in pivot_df.columns if d.weekday() < 5] # 주말 제외
-            pivot_df = pivot_df[valid_dates]
-            
-            # 슬라이딩 윈도우 (N일치)
-            if len(pivot_df.columns) > date_count:
-                pivot_df = pivot_df.iloc[:, :date_count]
-            
-            display_dates = pivot_df.columns.tolist()
-            
-            # X축 라벨 포맷팅 및 역방향 매핑용 딕셔너리
-            new_cols = [f"{d.month}/{d.day}" for d in pivot_df.columns]
-            rev_date_map = dict(zip(new_cols, display_dates))
-            pivot_df.columns = new_cols
-            
-            # 히트맵 생성
-            fig_test = px.imshow(
-                pivot_df,
-                labels=dict(x="날짜", y="동", color="점유율"),
-                x=pivot_df.columns,
-                y=[f"{p}동" for p in pivot_df.index],
-                color_continuous_scale="RdYlGn_r", # 테스트용 다른 배색
-                zmin=0, zmax=1.0, aspect="auto"
-            )
-            fig_test.update_traces(
-                hovertemplate="날짜: %{x}<br>동: %{y}<br>점유율: %{z:.1%}<extra></extra>",
-                texttemplate="<b>%{z:.0%}</b>",
-                textfont=dict(size=16)
-            )
-            fig_test.update_layout(title="🖱️ 클릭 가능한 테스트 히트맵 (날짜/동 상호작용)", height=450)
-            
-            # --- [CORE] 인터랙티브 차트 렌더링 및 이벤트 캡처 ---
-            # selection_mode="point"를 사용하여 클릭 이벤트를 감지합니다.
-            event_data = st.plotly_chart(fig_test, width="stretch", on_select="rerun", selection_mode="points")
-            
-            # --- 드릴다운 결과 표시 ---
-            selected_points = event_data.get("selection", {}).get("points", [])
-            
-            if selected_points:
-                point = selected_points[0]
-                sel_date_label = point.get("x")
-                sel_plant_label = point.get("y")
-                
-                # 라벨에서 실제 값 추출
-                target_date = rev_date_map.get(sel_date_label)
-                target_plant = int(sel_plant_label.replace("동", ""))
-                
-                st.markdown(f"### 🔍 상세 오더 내역 ({sel_plant_label}, {target_date.strftime('%Y-%m-%d')})")
-                
-                # 원본 데이터에서 해당 날짜에 해당 공장에 걸쳐 있는 오더 필터링
-                if not valid_orders.empty:
-                    # 날짜 비교를 위해 오더 데이터의 변환된 날짜 컬럼 사용
-                    drill_df = valid_orders[
-                        (valid_orders['동'] == target_plant) &
-                        (valid_orders['도장_transformed'].dt.date <= target_date.date()) &
-                        (valid_orders['포장_transformed'].dt.date >= target_date.date())
-                    ].copy()
-                    
-                    if not drill_df.empty:
-                        # 표시용 컬럼 정리
-                        display_cols = ['SEQ', '고객사', '모델명', '수량', '차수', '도장_transformed', '포장_transformed']
-                        drill_df = drill_df[display_cols]
-                        drill_df.columns = ['순번', '고객사', '모델명', '수량', '차수', '시작(도장)', '종료(포장)']
-                        
-                        st.dataframe(drill_df, width="stretch", hide_index=True)
-                        
-                        # 간단한 요약
-                        total_qty = drill_df['수량'].sum()
-                        st.caption(f"💡 총 {len(drill_df)}건의 오더가 진행 중이며, 합계 수량은 {total_qty:,} 입니다.")
-                    else:
-                        st.info("해당 시점에 진행 중인 상세 오더 정보가 없습니다.")
-            else:
-                st.info("💡 위 히트맵의 숫자 셀을 클릭하면 상세 내역이 여기에 나타납니다.")
-        else:
-            st.warning("분석 결과 데이터가 없습니다.")
+        # (중복 코드 블록 제거됨)

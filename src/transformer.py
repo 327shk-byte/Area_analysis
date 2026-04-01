@@ -19,6 +19,7 @@ class DataTransformer:
             '납기일': 'due_date', '납기': 'due_date', 'DUE': 'due_date',
             '진행동': 'plant', 'PLANT': 'plant', 'FACILITY': 'plant', '동': 'plant', 'LINE': 'plant',
             'AREA': 'area_m2_unit', '면적': 'area_m2_unit', 'UNITAREA': 'area_m2_unit', '평수': 'area_m2_unit', 'M2': 'area_m2_unit',
+            'PJT': 'pjt', 'PROJECT': 'pjt', 'PJT명': 'pjt', 'PJT.': 'pjt',
             '도장': 'start_in', 
             '제작_1': 'manufacture_1', '자재입고': 'material_in', '원자재입고': 'material_in', 'START': 'material_in',
             '제작일': 'production', '제작일자': 'production', '제작(P)': 'production',
@@ -213,7 +214,7 @@ class DataTransformer:
             df.columns = basic_cols + meta_cols
 
         # 5. 필수 표준 컬럼이 누락된 경우 빈 컬럼이라도 생성 (UI 크래시 방지)
-        standard_cols = ['order_id', 'customer', 'model', 'qty', 'due_date', 'plant', 'area_m2_unit', 'production', 'production_status', 'start_in', 'end_out']
+        standard_cols = ['order_id', 'customer', 'pjt', 'model', 'qty', 'due_date', 'plant', 'area_m2_unit', 'production', 'production_status', 'start_in', 'end_out']
         for col in standard_cols:
             if col not in df.columns:
                 df[col] = np.nan
@@ -264,7 +265,11 @@ class DataTransformer:
             
             # DATA_PLAN/ACTUAL 영역에서 주문 정보 상속 수행
             df[available_fill_cols] = df[available_fill_cols].ffill()
-        
+
+        # 7. [Fix] Arrow Serialization Error 방지: order_id를 문자열로 강제 변환
+        if 'order_id' in df.columns:
+            df['order_id'] = df['order_id'].astype(str).replace(['nan', 'None', 'NaN'], '')
+
         return df.reset_index(drop=True)
 
     def get_preview_rows(self, df: pd.DataFrame, n=2) -> pd.DataFrame:
