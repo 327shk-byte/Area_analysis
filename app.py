@@ -12,10 +12,40 @@ from datetime import datetime, date, timedelta # [Fix] Explicit import
 st.set_page_config(page_title="공장 점유 현황 시뮬레이터", layout="wide", initial_sidebar_state="collapsed")
 
 # --- 상단 타이틀 및 업데이트 로그 (작고 눈에 띄지 않게) ---
-t_col1, t_col2 = st.columns([0.88, 0.12], vertical_alignment="bottom")
+t_col1, t_col_guide, t_col_log = st.columns([0.80, 0.12, 0.08], vertical_alignment="bottom")
 with t_col1:
     st.markdown("<h1 style='margin-bottom: 0;'>🏭 공장 점유율 현황 시스템</h1>", unsafe_allow_html=True)
-with t_col2:
+with t_col_guide:
+    with st.popover("📖 주요 기능 안내", help="프로그램 주요 기능 요약 확인"):
+        st.markdown("""<div style='font-size: 0.9rem; color: #333;'>
+<h4 style='margin-top:0; color:#007bff;'>🚀 시스템 주요 기능 안내</h4>
+<p>본 시스템은 생산관리일정표의 수주 납기 및 소요 면적 데이터를 기반으로 <b>공장 면적 점유율을 분석·시뮬레이션 및 예측</b>하여 최적의 생산 스케줄링을 지원하는 종합 대시보드입니다.</p>
+
+<h5 style='margin-bottom:5px;'>1. 📊 공장 점유율 현황 (메인 대시보드)</h5>
+<ul style='margin-top:0; padding-left:20px; font-size: 0.85rem;'>
+    <li><b>자동화된 데이터 전처리:</b> 복잡한 일정표 데이터를 자동으로 정제하고 동급(1동~5동)별 실사용 면적 점유율을 계산합니다.</li>
+    <li><b>직관적인 데이터 시각화:</b> 설정된 임계치(예: 80%)에 따라 색상이 동적으로 변하는 히트맵과 라인/바 차트를 제공합니다.</li>
+    <li><b>초과 수용 리스크 관리:</b> 과부하가 예상되는 위험 구간을 식별하고, 공장별 점유 동향 및 피크 시점을 요약 보고합니다.</li>
+</ul>
+
+<h5 style='margin-bottom:5px;'>2. 🧪 조건 설정 시뮬레이션 (What-If 분석)</h5>
+<ul style='margin-top:0; padding-left:20px; font-size: 0.85rem;'>
+    <li><b>가상 수주 투입:</b> 향후 예상되는 대형 수주나 긴급 신규 오더를 가상으로 시스템에 투입해 볼 수 있습니다.</li>
+    <li><b>영향도 확인:</b> 오더 투입 전(기준선)과 투입 후의 점유율 변화량(Delta)을 전용 히트맵을 통해 한눈에 비교 분석해 줍니다.</li>
+</ul>
+
+<h5 style='margin-bottom:5px;'>3. 🔮 AI 점유율 예측 (수요 및 포화도 예측)</h5>
+<ul style='margin-top:0; padding-left:20px; font-size: 0.85rem;'>
+    <li><b>정밀 알고리즘 최적화:</b> 선형 회귀(Linear Regression), 이동 평균(MA), 통계/시계열(ARIMA) 모델을 복합 적용해 향후 최대 1년(52주)간의 점유율 추세를 투사합니다.</li>
+    <li><b>사전 대응 알림:</b> 공장 캐파(Capacity)를 초과할 위험이 있는 예상 기간(연속 초과 일수) 등을 지능적으로 탐지하여 사전 대응을 돕습니다.</li>
+</ul>
+
+<h5 style='margin-bottom:5px;'>4. 🗂️ 구역별 드릴다운 추적 (현미경 뷰)</h5>
+<ul style='margin-top:0; padding-left:20px; font-size: 0.85rem;'>
+    <li><b>양방향 인터랙티브 분석:</b> 전체 현황 히트맵에서 문제가 의심되는 특정 날짜와 생산 동을 클릭하면, 즉시 역추적하여 해당 시점에 가동 중인 전체 상세 오더 리스트(순번, 면적, 수량 등)를 보여줍니다.</li>
+</ul>
+</div>""", unsafe_allow_html=True)
+with t_col_log:
     with st.popover("⋯", help="시스템 업데이트 기록 확인"):
         st.markdown("""
             <div style='font-size: 0.85rem; color: #555;'>
@@ -24,6 +54,12 @@ with t_col2:
                     <span style='color: #888; font-size: 0.8rem;'>made by Seokgi.Kim</span>
                 </div>
                 <hr style='margin: 8px 0;'>
+                <p><strong>v1.2.1 (2026-04-01)</strong></p>
+                <ul style='padding-left: 20px; margin-top: 4px;'>
+                    <li>🏷️ 상세 내역(드릴다운)에 '면적' 컬럼 추가 및 정수형 표기 보정</li>
+                    <li>🎨 테스트 탭의 히트맵 색상을 설정 임계치 기반 동적 알고리즘으로 메인탭과 동일하게 변경</li>
+                    <li>📖 메인 화면 주요 기능 요약 가이드 추가</li>
+                </ul>
                 <p><strong>v1.2.0 (2026-04-01)</strong></p>
                 <ul style='padding-left: 20px; margin-top: 4px;'>
                     <li>🔄 화면 드릴다운 동기화 오류 완전 수정 (히트맵 클릭 시 상세내역 갱신)</li>
