@@ -12,7 +12,7 @@ from datetime import datetime, date, timedelta # [Fix] Explicit import
 st.set_page_config(page_title="공장 점유 현황 시뮬레이터", layout="wide", initial_sidebar_state="collapsed")
 
 # --- 상단 타이틀 및 업데이트 로그 (작고 눈에 띄지 않게) ---
-t_col1, t_col_guide, t_col_log = st.columns([0.80, 0.12, 0.08], vertical_alignment="bottom")
+t_col1, t_col_guide, t_col_log = st.columns([0.76, 0.12, 0.12], vertical_alignment="bottom")
 with t_col1:
     st.markdown("<h1 style='margin-bottom: 0;'>🏭 공장 점유율 현황 시스템</h1>", unsafe_allow_html=True)
 with t_col_guide:
@@ -46,7 +46,7 @@ with t_col_guide:
 </ul>
 </div>""", unsafe_allow_html=True)
 with t_col_log:
-    with st.popover("⋯", help="시스템 업데이트 기록 확인"):
+    with st.popover("📜 업데이트 로그", help="시스템 업데이트 기록 확인"):
         st.markdown("""
             <div style='font-size: 0.85rem; color: #555;'>
                 <div style='display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px;'>
@@ -552,6 +552,10 @@ st.markdown("""
         font-size: 1.0rem !important;
         font-weight: 500 !important;
     }
+    /* 팝오버 버튼(주요 기능 안내 등) 글씨 크기 조정 */
+    div[data-testid="stPopover"] button p {
+        font-size: 0.85rem !important;
+    }
     /* 사이드바 전체 너비 축소 (시인성 확보를 위해 이전보다 약간 확대) */
     [data-testid="stSidebar"] {
         min-width: 380px !important;
@@ -587,7 +591,8 @@ st.markdown("""
         justify-content: center !important;
     }
     /* 4번째 탭(테스트용) 글씨 크기 축소 */
-    div[data-testid="stTabs"] button[id^="tabs-bui"][id$="-tab-3"] div p {
+    div[data-testid="stTabs"] button[id^="tabs-bui"][id$="-tab-3"] div p,
+    div[data-testid="stTabs"] button[id^="tabs-bui"][id$="-tab-4"] div p {
         font-size: 0.8rem !important;
         color: #888 !important;
     }
@@ -595,7 +600,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # UI 구성 (Tabs)
-tab1, tab2, tab3, tab4 = st.tabs(["📊 공장 점유율 현황", "🧪 조건 설정 시뮬레이션", "🔮 AI 점유율 예측", "🧪 공장 점유율 현황_test"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 공장 점유율 현황", "🧪 조건 설정 시뮬레이션", "🔮 AI 점유율 예측", "🧪 공장 점유율 현황_test", "🛠️ 개발중"])
 
 with tab1:
     st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
@@ -2201,3 +2206,186 @@ with tab4:
         st.markdown("<hr>", unsafe_allow_html=True)
         if st.checkbox("디버그 모드 (클릭 데이터 확인)", value=True):
             st.write("🔍 DEBUG - 현재 선택 데이터:", st.session_state.get("heatmap_test"))
+
+with tab5:
+    st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
+    st.markdown(f"""
+        <div style="display: flex; align-items: baseline; gap: 12px; margin-bottom: 5px;">
+            <h3 style="margin: 0; font-size: 1.35rem;">📥 데이터 업로드 (개발중)</h3>
+            <span style="color: #aaa; font-size: 0.95rem;">추가 기능을 개발하기 위한 데이터 테스트 공간입니다.</span>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    dev_file_upload = st.file_uploader('"사용자별_사용현황 " 파일을 드래그하거나 클릭하여 업로드하세요.', 
+                                        type=["csv", "xlsx", "xls", "xlsb"], key="dev_file_upload")
+    
+    if dev_file_upload:
+        try:
+            # 1. 파일 데이터 로딩 (pandas 활용)
+            if dev_file_upload.name.lower().endswith('.csv'):
+                df_usage = pd.read_csv(dev_file_upload)
+            else:
+                df_usage = pd.read_excel(dev_file_upload)
+            
+            if df_usage is not None and not df_usage.empty:
+                # 현재 컬럼명에 '일시', '사용자'가 포함되어 있는지 확인
+                current_cols = [str(c).replace(" ", "") for c in df_usage.columns]
+                has_header = any('일시' in c or '일자' in c for c in current_cols) and any('사용자' in c for c in current_cols)
+                
+                if not has_header:
+                    for i in range(min(15, len(df_usage))):
+                        row_vals = [str(x).replace(" ", "") for x in df_usage.iloc[i].values]
+                        if any('일시' in v or '일자' in v for v in row_vals) and any('사용자' in v for v in row_vals):
+                            df_usage.columns = df_usage.iloc[i].values
+                            df_usage = df_usage.iloc[i+1:].reset_index(drop=True)
+                            break
+                            
+                # 컬럼명 공백 정리
+                df_usage.columns = [str(c).strip() for c in df_usage.columns]
+                
+                # 컬럼명 자동 탐지 (공백, 개행 문자 등 제거 후 확인)
+                date_col = None
+                user_col = None
+                for c in df_usage.columns:
+                    c_clean = str(c).replace(" ", "").replace("\n", "").replace("\r", "").lower()
+                    if not date_col and ('일시' in c_clean or '일자' in c_clean or 'date' in c_clean):
+                        date_col = c
+                    if not user_col and ('사용자' in c_clean or 'user' in c_clean):
+                        user_col = c
+                
+                if date_col and user_col:
+                    plot_df = df_usage.copy()
+                    # 날짜 형식으로 변환 (형식이 맞지 않으면 NaT)
+                    plot_df[date_col] = pd.to_datetime(plot_df[date_col], errors='coerce')
+                    plot_df = plot_df.dropna(subset=[date_col, user_col])
+                    
+                    if not plot_df.empty:
+                        st.success(f"'{dev_file_upload.name}' 데이터 분석 완료! (총 {len(plot_df)}건)")
+                        st.markdown("### 📊 사용자별 접속 현황 대시보드")
+                        
+                        # 일자별 / 주차별 기준 산출
+                        plot_df['Date'] = plot_df[date_col].dt.date
+                        plot_df['Week'] = plot_df[date_col].dt.to_period('W').dt.start_time.dt.date
+
+                        # 그래프 위아래 1개씩 렌더링 (전체 폭 사용)
+                        
+                        # 사용자별 총 접속 횟수 계산하여 정렬 순서 결정
+                        user_rank = plot_df[user_col].value_counts().index.tolist()
+                        
+                        # 1. 사용자별 접속 현황 (일자별 Stack)
+                        daily_counts = plot_df.groupby(['Date', user_col]).size().reset_index(name='Access_Count')
+                        daily_counts['Date_Str'] = daily_counts['Date'].apply(lambda x: x.strftime('%#m/%#d'))
+                        
+                        # 각 사용자별 총합 계산 (텍스트 표시용)
+                        daily_totals = daily_counts.groupby(user_col)['Access_Count'].sum().reset_index()
+                        
+                        # 커스텀 연한 색상 조합 (회색, 파랑, 노랑, 녹색 등)
+                        custom_pastels = ["#D3D3D3", "#ADD8E6", "#FFF9C4", "#C8E6C9", "#F8BBD0", "#E1BEE7", "#B3E5FC", "#FFCCBC"]
+                        
+                        fig_daily = px.bar(daily_counts, x=user_col, y='Access_Count', color='Date_Str',
+                                            title='<b>📅 사용자별 메뉴 클릭 횟수 (일자별 구분)</b>', 
+                                            labels={'Date_Str': '일자', 'Access_Count': '메뉴 클릭 횟수', user_col: '사용자'},
+                                            category_orders={user_col: user_rank},
+                                            color_discrete_sequence=custom_pastels,
+                                            template='plotly_white')
+                        
+                        # 상단에 합계 표시 (Scatter trace 이용)
+                        fig_daily.add_scatter(x=daily_totals[user_col], y=daily_totals['Access_Count'], 
+                                              text=daily_totals['Access_Count'].apply(lambda x: f"<b>{x}</b>"), mode='text',
+                                              textposition='top center', showlegend=False,
+                                              textfont=dict(size=17, color='black'))
+
+                        # 글씨 크기 및 굵기 조정 및 Y축 범위 여유 확보 (숫자 잘림 방지)
+                        max_daily = daily_totals['Access_Count'].max() if not daily_totals.empty else 100
+                        fig_daily.update_layout(
+                            font=dict(size=14, color='black'),
+                            title_font=dict(size=20, color='black'),
+                            xaxis=dict(tickfont=dict(size=15, family='Arial Black', color='black')),
+                            yaxis=dict(title_font=dict(size=16, color='black'), tickfont=dict(size=14, color='black', family='Arial Black'),
+                                       range=[0, max_daily * 1.15]),
+                            legend=dict(font=dict(size=13))
+                        )
+                        
+                        # 2. 사용자별 접속 현황 (주차별 Stack)
+                        weekly_counts = plot_df.groupby(['Week', user_col]).size().reset_index(name='Access_Count')
+                        weekly_counts['Week_Str'] = weekly_counts['Week'].apply(lambda x: x.strftime('%#m/%#d'))
+                        
+                        # 각 사용자별 총합 계산 (텍스트 표시용)
+                        weekly_totals = weekly_counts.groupby(user_col)['Access_Count'].sum().reset_index()
+
+                        fig_weekly = px.bar(weekly_counts, x=user_col, y='Access_Count', color='Week_Str',
+                                            title='<b>🗓️ 사용자별 메뉴 클릭 횟수 (주차별 구분)</b>', 
+                                            labels={'Week_Str': '주차(시작일)', 'Access_Count': '메뉴 클릭 횟수', user_col: '사용자'},
+                                            category_orders={user_col: user_rank},
+                                            color_discrete_sequence=custom_pastels,
+                                            template='plotly_white')
+                        
+                        # 상단에 합계 표시
+                        fig_weekly.add_scatter(x=weekly_totals[user_col], y=weekly_totals['Access_Count'], 
+                                               text=weekly_totals['Access_Count'].apply(lambda x: f"<b>{x}</b>"), mode='text',
+                                               textposition='top center', showlegend=False,
+                                               textfont=dict(size=17, color='black'))
+
+                        max_weekly = weekly_totals['Access_Count'].max() if not weekly_totals.empty else 100
+                        fig_weekly.update_layout(
+                            font=dict(size=14, color='black'),
+                            title_font=dict(size=20, color='black'),
+                            xaxis=dict(tickfont=dict(size=14, family='Arial Black', color='black')),
+                            yaxis=dict(title_font=dict(size=16, color='black'), tickfont=dict(size=14, color='black', family='Arial Black'),
+                                       range=[0, max_weekly * 1.15]),
+                            legend=dict(font=dict(size=14))
+                        )
+
+                        # 3. 사용자별 로그인 일수 (1일 1회 계산)
+                        # daily_counts 자체가 [Date, User] 그룹화 결과이므로 각 행을 1로 취급
+                        login_df = daily_counts.copy()
+                        login_df['Login_Value'] = 1
+                        
+                        # 로그인 일수 기준 사용자 정렬 순서
+                        user_login_rank = login_df.groupby(user_col)['Login_Value'].sum().sort_values(ascending=False).index.tolist()
+                        login_totals = login_df.groupby(user_col)['Login_Value'].sum().reset_index()
+
+                        fig_login = px.bar(login_df, x=user_col, y='Login_Value', color='Date_Str',
+                                            title='<b>🔑 사용자별 로그인 일수 (1일 1회 기준)</b>', 
+                                            labels={'Date_Str': '일자', 'Login_Value': '로그인 일수', user_col: '사용자'},
+                                            category_orders={user_col: user_login_rank},
+                                            color_discrete_sequence=custom_pastels,
+                                            template='plotly_white')
+                        
+                        fig_login.add_scatter(x=login_totals[user_col], y=login_totals['Login_Value'], 
+                                              text=login_totals['Login_Value'].apply(lambda x: f"<b>{x}일</b>"), mode='text',
+                                              textposition='top center', showlegend=False,
+                                              textfont=dict(size=17, color='black'))
+
+                        max_login = login_totals['Login_Value'].max() if not login_totals.empty else 10
+                        fig_login.update_layout(
+                            font=dict(size=14, color='black'),
+                            title_font=dict(size=20, color='black'),
+                            xaxis=dict(tickfont=dict(size=14, family='Arial Black', color='black')),
+                            yaxis=dict(title_font=dict(size=16, color='black'), tickfont=dict(size=14, color='black', family='Arial Black'),
+                                       range=[0, max_login * 1.15]),
+                            legend=dict(font=dict(size=14))
+                        )
+
+                        # 그래프 출력 순서 조정 (일자별 -> 로그인 일수 -> 주차별)
+                        st.plotly_chart(fig_daily, use_container_width=True)
+                        
+                        # 각 그래프 사이에 연한 회색 구분선 추가
+                        st.markdown("<hr style='border: 0.5px solid #eee; margin: 30px 0;'>", unsafe_allow_html=True)
+                        st.plotly_chart(fig_login, use_container_width=True)
+                        
+                        st.markdown("<hr style='border: 0.5px solid #eee; margin: 30px 0;'>", unsafe_allow_html=True)
+                        st.plotly_chart(fig_weekly, use_container_width=True)
+                            
+                        # (옵션) 원본 데이터 테이블 확인
+                        with st.expander("원본 데이터 확인"):
+                            st.dataframe(plot_df)
+                    else:
+                        st.warning("분석 가능한 유효한 날짜/사용자 데이터가 없습니다.")
+                else:
+                    st.error(f"❌ 엑셀 파일에서 '일시' 혹은 '사용자' 컬럼을 찾을 수 없습니다.")
+                    st.info(f"파싱된 컬럼 목록: {list(df_usage.columns)}")
+                    with st.expander("데이터 미리보기 (상위 10행)"):
+                        st.dataframe(df_usage.head(10))
+        except Exception as e:
+            st.error(f"🚨 파일 처리 중 오류가 발생했습니다: {e}")
