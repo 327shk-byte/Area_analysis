@@ -2488,11 +2488,28 @@ with tab5:
                                             if not missing_users_df.empty:
                                                 names_list = ", ".join(missing_users_df['사용자명'].tolist())
                                                 st.markdown(f"""
-                                                    <div style="background-color: rgba(255, 75, 75, 0.05); padding: 15px; border-radius: 8px; border: 1px solid rgba(255, 75, 75, 0.2); margin: 10px 0 20px 0; line-height: 1.6;">
+                                                    <div style="background-color: rgba(255, 75, 75, 0.05); padding: 15px; border-radius: 8px; border: 1px solid rgba(255, 75, 75, 0.2); margin: 10px 0 10px 0; line-height: 1.6;">
                                                         <strong style="color: #ff4b4b; font-size: 0.9rem;">📝 미접속 사용자 명단:</strong><br>
                                                         <span style="font-size: 0.95rem; color: #333;">{names_list}</span>
                                                     </div>
                                                 """, unsafe_allow_html=True)
+
+                                                # [User Request] 부서별 미접속자 그룹화 표시
+                                                dept_groups = missing_users_df.groupby('부서')['사용자명'].apply(lambda x: ", ".join(x)).reset_index()
+                                                dept_lines = []
+                                                for _, row in dept_groups.iterrows():
+                                                    d_name = row['부서'] if row['부서'] else "부서 미지정"
+                                                    dept_lines.append(f"<li style='margin-bottom: 5px;'><strong style='color: #444; font-size: 0.9rem;'>{d_name}</strong> : <span style='font-size: 0.9rem; color: #555;'>{row['사용자명']}</span></li>")
+                                                
+                                                dept_html = f"""
+                                                    <div style="background-color: rgba(255, 75, 75, 0.05); padding: 15px; border-radius: 8px; border: 1px solid rgba(255, 75, 75, 0.2); margin: 0 0 20px 0;">
+                                                        <strong style="color: #ff4b4b; font-size: 0.9rem; display: block; margin-bottom: 10px;">🏢 부서별 미접속 현황:</strong>
+                                                        <ul style="list-style: none; padding-left: 0; margin: 0;">
+                                                            {"".join(dept_lines)}
+                                                        </ul>
+                                                    </div>
+                                                """
+                                                st.markdown(dept_html, unsafe_allow_html=True)
                                             
                                             if not missing_users_df.empty:
                                                 with st.expander(f"미접속 사용자 명단 확인 ({len(missing_users_df)}명)", expanded=True):
