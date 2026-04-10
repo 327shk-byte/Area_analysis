@@ -1,8 +1,10 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import os
+import re
 from src.validator import DataValidator
 from src.occupancy_engine import OccupancyEngine
 from src.transformer import DataTransformer
@@ -2216,14 +2218,48 @@ with tab5:
         c1, c2, c3 = st.columns([1, 1, 1])
         with c2:
             st.markdown("<h3 style='text-align: center;'>🔐 Developer Access</h3>", unsafe_allow_html=True)
-            password = st.text_input("비밀번호를 입력하세요", type="password", key="dev_pwd_input")
-            if st.button("접근 허용", use_container_width=True):
-                if password == "2305":
+            
+            # [Fix] 비밀번호 확인 콜백 함수 (Enter 키 대응)
+            def check_dev_password():
+                pwd = st.session_state.get("dev_pwd_input", "")
+                if pwd == "2305":
                     st.session_state["dev_authenticated"] = True
-                    st.success("인증 성공!")
-                    st.rerun()
+                    # st.rerun()은 콜백 내에서 불필요하므로 제거 (자동 재실행됨)
+                elif pwd != "":
+                    st.session_state["dev_pwd_error"] = "❌ 비밀번호가 일치하지 않습니다."
                 else:
-                    st.error("❌ 비밀번호가 일치하지 않습니다.")
+                    st.session_state.pop("dev_pwd_error", None)
+
+            # [User Request] 자동 포커스 및 Enter 키 연동
+            st.text_input("비밀번호를 입력하세요", type="password", key="dev_pwd_input", on_change=check_dev_password)
+            
+            if "dev_pwd_error" in st.session_state:
+                st.error(st.session_state["dev_pwd_error"])
+
+            if st.button("접근 허용", use_container_width=True):
+                check_dev_password()
+                if st.session_state["dev_authenticated"]:
+                    st.rerun() # 버튼 클릭 시에는 명시적 재실행이 필요할 수 있음 (상태 변경 반영)
+
+            # [User Request] JavaScript를 이용한 자동 포커스 (SetFocus) - 지연 및 재시도 로직 추가
+            components.html(
+                """
+                <script>
+                    function focusPassword() {
+                        const passwordInput = window.parent.document.querySelector('input[type="password"]');
+                        if (passwordInput) {
+                            passwordInput.focus();
+                        } else {
+                            // 아직 렌더링되지 않았을 경우 100ms 후 재시도
+                            setTimeout(focusPassword, 100);
+                        }
+                    }
+                    // 최초 렌더링 시 약간의 지연 후 실행 (Streamlit 렌더링 타이밍 대응)
+                    setTimeout(focusPassword, 300);
+                </script>
+                """,
+                height=0,
+            )
     else:
         st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
         st.markdown(f"""
@@ -2256,12 +2292,12 @@ with tab5:
                 if df_usage is not None and not df_usage.empty:
                     # 현재 컬럼명에 '일시', '사용자'가 포함되어 있는지 확인
                     current_cols = [str(c).replace(" ", "") for c in df_usage.columns]
-                    has_header = any('일시' in c or '일자' in c for c in current_cols) and any('사용자' in c for c in current_cols)
+                    has_header = any('일시' in c or '일자' in c for c in current_cols) and any('사용자' in c or 'user' in c for c in current_cols)
                     
                     if not has_header:
                         for i in range(min(15, len(df_usage))):
                             row_vals = [str(x).replace(" ", "") for x in df_usage.iloc[i].values]
-                            if any('일시' in v or '일자' in v for v in row_vals) and any('사용자' in v for v in row_vals):
+                            if any('일시' in v or '일자' in v for v in row_vals) and any('사용자' in v or 'user' in v for v in row_vals):
                                 df_usage.columns = df_usage.iloc[i].values
                                 df_usage = df_usage.iloc[i+1:].reset_index(drop=True)
                                 break
@@ -2286,6 +2322,8 @@ with tab5:
                         plot_df = plot_df.dropna(subset=[date_col, user_col])
                         
                         if not plot_df.empty:
+                            # [User Request] 업로드된 사용자 명단 저장 (공백 제거 후 비교용)
+                            st.session_state["uploaded_users"] = set(plot_df[user_col].astype(str).str.strip().unique())
                             st.success(f"'{dev_file_upload.name}' 데이터 분석 완료! (총 {len(plot_df)}건)")
                             st.markdown("### 📊 사용자별 접속 현황 대시보드")
                             
@@ -2400,6 +2438,82 @@ with tab5:
                             st.markdown("<hr style='border: 0.5px solid #eee; margin: 30px 0;'>", unsafe_allow_html=True)
                             st.plotly_chart(fig_login, use_container_width=True)
                             
+
+                            # --- [User Request] 사용자 마스터 정보 & 미접속 사용자 비교 분석 (위치 변경) ---
+                            user_info_file = "순번 재직여부 아이디 사용자명 부서 전화번호 등록일 260410.txt"
+                            if os.path.exists(user_info_file):
+                                try:
+                                    with open(user_info_file, "r", encoding="utf-8") as f:
+                                        u_lines = f.readlines()
+                                    
+                                    if u_lines:
+                                        u_data = []
+                                        for u_line in u_lines[1:]:
+                                            u_parts = u_line.strip().split()
+                                            if len(u_parts) < 5: continue
+                                            
+                                            u_reg = f"{u_parts[-2]} {u_parts[-1]}"
+                                            u_main = u_parts[:-2]
+                                            
+                                            u_row = {
+                                                '순번': u_main[0],
+                                                '재직여부': u_main[1],
+                                                '아이디': u_main[2],
+                                                '사용자명': u_main[3] if len(u_main) > 3 else "",
+                                                '부서': "",
+                                                '전화번호': "",
+                                                '등록일': u_reg
+                                            }
+                                            
+                                            u_rem = u_main[4:]
+                                            for ur in u_rem:
+                                                if re.match(r'\d{2,3}-\d{3,4}-\d{4}', ur):
+                                                    u_row['전화번호'] = ur
+                                                else:
+                                                    u_row['부서'] = ur
+                                            u_data.append(u_row)
+                                        
+                                        df_user_master = pd.DataFrame(u_data)
+                                        
+                                        # [User Request] 미접속 사용자 비교 분석
+                                        if "uploaded_users" in st.session_state:
+                                            uploaded_users = st.session_state["uploaded_users"]
+                                            missing_users_df = df_user_master[~df_user_master['사용자명'].str.strip().isin(uploaded_users)].copy()
+                                            
+                                            st.markdown("<hr style='border: 1px dashed #ddd; margin: 40px 0 20px 0;'>", unsafe_allow_html=True)
+                                            st.markdown(f"### ⚠️ 시스템 미접속 사용자 명단 (총 {len(missing_users_df)}명)")
+                                            st.caption("※ 사용자 마스터 정보에는 등록되어 있으나, 업로드한 '사용자별_사용현황' 엑셀 상에 접속 기록이 없는 인원입니다.")
+                                            
+                                            # [User Request] 한눈에 볼 수 있도록 사용자명 나열 (쉼표 구분)
+                                            if not missing_users_df.empty:
+                                                names_list = ", ".join(missing_users_df['사용자명'].tolist())
+                                                st.markdown(f"""
+                                                    <div style="background-color: rgba(255, 75, 75, 0.05); padding: 15px; border-radius: 8px; border: 1px solid rgba(255, 75, 75, 0.2); margin: 10px 0 20px 0; line-height: 1.6;">
+                                                        <strong style="color: #ff4b4b; font-size: 0.9rem;">📝 미접속 사용자 명단:</strong><br>
+                                                        <span style="font-size: 0.95rem; color: #333;">{names_list}</span>
+                                                    </div>
+                                                """, unsafe_allow_html=True)
+                                            
+                                            if not missing_users_df.empty:
+                                                with st.expander(f"미접속 사용자 명단 확인 ({len(missing_users_df)}명)", expanded=True):
+                                                    # [User Request] 사용자명, 부서, 아이디, 등록일만 표시
+                                                    display_cols = ['사용자명', '부서', '아이디', '등록일']
+                                                    available_cols = [c for c in display_cols if c in missing_users_df.columns]
+                                                    st.dataframe(missing_users_df[available_cols], use_container_width=True)
+                                            else:
+                                                st.success("🎉 모든 마스터 사용자가 시스템 접속 기록이 있습니다.")
+                                        
+                                        st.markdown("<hr style='border: 1px solid #eee; margin: 40px 0 20px 0;'>", unsafe_allow_html=True)
+                                        with st.expander("👤 사용자 마스터 정보 확인 (전체)", expanded=False):
+                                            st.dataframe(df_user_master, use_container_width=True, height=400)
+                                            
+                                    else:
+                                        st.info("사용자 마스터 파일이 비어 있습니다.")
+                                except Exception as ue:
+                                    st.error(f"사용자 데이터 로드 중 오류: {ue}")
+                            else:
+                                st.warning(f"사용자 마스터 파일을 찾을 수 없습니다: {user_info_file}")
+
                             st.markdown("<hr style='border: 0.5px solid #eee; margin: 30px 0;'>", unsafe_allow_html=True)
                             st.plotly_chart(fig_weekly, use_container_width=True)
                                 
@@ -2415,4 +2529,6 @@ with tab5:
                             st.dataframe(df_usage.head(10))
             except Exception as e:
                 st.error(f"🚨 파일 처리 중 오류가 발생했습니다: {e}")
+
+
 
