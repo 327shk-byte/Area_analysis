@@ -54,6 +54,11 @@ with t_col_log:
                     <span style='color: #888; font-size: 0.8rem;'>made by Seokgi.Kim</span>
                 </div>
                 <hr style='margin: 8px 0;'>
+                <p><strong>v1.2.2 (2026-04-10)</strong></p>
+                <ul style='padding-left: 20px; margin-top: 4px;'>
+                    <li>🔄 실험실 탭(비동기 히트맵) 클릭-상세내역 드릴다운 완벽 연동</li>
+                    <li>🎨 테스트 탭의 히트맵 레이아웃 및 디자인을 핵심 메인 탭과 완벽 동일하게 렌더링하도록 개선</li>
+                </ul>
                 <p><strong>v1.2.1 (2026-04-01)</strong></p>
                 <ul style='padding-left: 20px; margin-top: 4px;'>
                     <li>🏷️ 상세 내역(드릴다운)에 '면적' 컬럼 추가 및 정수형 표기 보정</li>
@@ -869,7 +874,7 @@ with tab1:
                             # [User Request] 제목을 조금 더 위로 올려서 6 숫자가 잘 보이게 조정 (margin-bottom: 5px)
                             label_placeholder.markdown(f"""
                                 <div style='display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; margin-top: -5px;'>
-                                    <p style='font-size: 0.95rem; color: #000000; font-weight: 800; margin: 0; white-space: nowrap;'>📅 표시 날짜 개수 <span style='color: #28a745;'>(현재 : {date_count}일)</span></p>
+                                    <p style='font-size: 0.95rem; color: #000000; font-weight: 800; margin: 0; white-space: nowrap;'>📅 표시 날짜 개수 <span style='color: #28a745;'>(현재 : {date_count}개)</span></p>
                                     <span style='font-size: 0.75rem; color: #777; font-weight: 400; white-space: nowrap;'>| 조정</span>
                                 </div>
                             """, unsafe_allow_html=True)
@@ -877,10 +882,19 @@ with tab1:
                 metric = 'rate' if '%' in metric_opt else 'area'
 
                 if s_date and e_date and s_date <= e_date:
+                    # [CRITICAL FIX] "표시 날짜 개수(date_count)"를 만족시키기 위해 분석 엔진의 종료일(e_date)을 일시적으로 대폭 연장
+                    calc_e_date = e_date
+                    if gran == 'D':
+                        calc_e_date = max(e_date, s_date + timedelta(days=date_count * 2))
+                    elif gran == 'W':
+                        calc_e_date = max(e_date, s_date + timedelta(weeks=date_count + 2))
+                    elif gran == 'M':
+                        calc_e_date = max(e_date, s_date + timedelta(days=date_count * 32))
+
                     engine = OccupancyEngine()
                     results = engine.calculate_daily_occupancy(
                         valid_orders, clean_capa,
-                        start_date=s_date, end_date=e_date,
+                        start_date=s_date, end_date=calc_e_date,
                         mode=proc_mode, include_estimated=inc_est,
                         granularity=gran, aggregation=agg,
                         threshold=threshold
@@ -982,7 +996,7 @@ with tab1:
                             fig_hm.update_traces(
                                 hovertemplate="기간: %{x}<br>동: %{y}<br>점유율: %{z:.1%}<extra></extra>",
                                 texttemplate="<b>%{z:.0%}</b>", # 셀 위에 표시될 텍스트
-                                textfont=dict(size=18, color="#000000") # 가독성을 위해 크고 검정색
+                                textfont=dict(size=22, color="#000000") # 가독성을 위해 크고 검정색
                             )
                         else:
                             fig_hm.update_traces(
@@ -1016,6 +1030,14 @@ with tab1:
                         clean_gran = gran_opt.split(' ')[0]
                         clean_agg = agg_opt.split(' ')[0]
                         
+                        # 화면에 실제로 표시된 첫 번째/마지막 날짜를 추출하여 파란색 요약 문구에 반영
+                        if display_dates:
+                            actual_s_date = display_dates[0].strftime('%Y-%m-%d')
+                            actual_e_date = display_dates[-1].strftime('%Y-%m-%d')
+                        else:
+                            actual_s_date = s_date
+                            actual_e_date = e_date
+
                         # 히트맵의 가로 길이를 1/4 축소하기 위해 3:1 비율의 컬럼으로 분할
                         col_h1, col_h2 = st.columns([3, 1])
                         with col_h1:
@@ -1029,7 +1051,7 @@ with tab1:
                                     color: #000000;
                                     font-size: 0.95rem;
                                 ">
-                                    💡 <b>{s_date} ~ {e_date}</b>, <b>{mode_opt}</b> 기준, 
+                                    💡 <b>{actual_s_date} ~ {actual_e_date}</b>, <b>{mode_opt}</b> 기준, 
                                     <b>{clean_gran}·{clean_agg}</b>으로 동별 <b>{metric_opt}</b>을 분석 중입니다.
                                 </div>
                             """, unsafe_allow_html=True)
@@ -1893,6 +1915,8 @@ with tab4:
     st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
     st.info("🧪 **실험실: 히트맵 드릴다운(Drill-down) 테스트**\n\n히트맵의 특정 셀을 클릭하거나 아래의 메뉴에서 직접 날짜/동을 선택하여 상세 오더를 확인해 보세요.")
     
+    
+
     # 세션 상태 초기화
     if "drill_date_idx" not in st.session_state:
         st.session_state["drill_date_idx"] = 0
@@ -1911,7 +1935,8 @@ with tab4:
         valid_orders, _, _ = validator.validate_orders(st.session_state["orders_data"])
         clean_capa, _ = validator.validate_capacity(st.session_state["capa_data"])
         
-        s_date, e_date = date(2026, 3, 30), date(2026, 6, 30)
+        s_date = st.session_state.get("analysis_start", date(2026, 3, 30))
+        e_date = st.session_state.get("analysis_end", date(2026, 6, 30))
         threshold = st.session_state.get("saturation_threshold", 80) / 100
         date_count = st.session_state.get("date_count", 6)
         
@@ -1941,24 +1966,69 @@ with tab4:
             
             plants_list = [f"{p}동" for p in pivot_df.index]
 
-            # --- [CORE] 클릭 이벤트 기반 상태 업데이트 (selectbox 직접 업데이트) ---
-            if "heatmap_test" in st.session_state and st.session_state["heatmap_test"].get("selection"):
-                selected_points = st.session_state["heatmap_test"]["selection"].get("points", [])
-                if selected_points:
-                    point = selected_points[0]
-                    sel_x = point.get("x")
-                    sel_y = point.get("y")
+            # [Selection Logic] 이전 실행의 클릭 데이터를 확인하여 상위 위젯과 동기화
+            if "heatmap_test" in st.session_state:
+                event_data = st.session_state["heatmap_test"]
+                points = []
+                # SelectionEvent 객체 또는 딕셔너리 대응
+                if hasattr(event_data, "selection"):
+                    points = event_data.selection.get("points", [])
+                elif isinstance(event_data, dict) and "selection" in event_data:
+                    points = event_data["selection"].get("points", [])
+                
+                if points:
+                    point = points[0]
+                    # Plotly 반환값(raw_x, raw_y)이 Label(문자열)이거나 Index(숫자)인 경우 모두 대응
+                    raw_x = point.get("x")
+                    raw_y = point.get("y")
                     
-                    click_sig = f"{sel_x}_{sel_y}"
-                    # 히트맵의 클릭 발생(값이 변경) 시에만 위젯을 강제 업데이트 (수동 선택 시 덮어쓰기 방지)
-                    if st.session_state.get("last_heatmap_click") != click_sig:
-                        if sel_x in new_cols:
-                            st.session_state["sel_date_widget"] = sel_x
-                        if sel_y in plants_list:
-                            st.session_state["sel_plant_widget"] = sel_y
-                        st.session_state["last_heatmap_click"] = click_sig
+                    # 1. x(날짜) 매칭 로직
+                    new_sel_x = None
+                    if isinstance(raw_x, (int, float)): # Index로 넘어온 경우
+                        idx = int(raw_x)
+                        if 0 <= idx < len(new_cols):
+                            new_sel_x = new_cols[idx]
+                    else: # Label 문자열로 넘어온 경우
+                        s_raw_x = str(raw_x).strip()
+                        if s_raw_x in new_cols:
+                            new_sel_x = s_raw_x
+                        else:
+                            # 부분 일치 검색 (방어적)
+                            for col in new_cols:
+                                if s_raw_x in col or col in s_raw_x:
+                                    new_sel_x = col
+                                    break
+                    
+                    # 2. y(공장) 매칭 로직
+                    new_sel_y = None
+                    if isinstance(raw_y, (int, float)): # Index로 넘어온 경우
+                        idx = int(raw_y)
+                        if 0 <= idx < len(plants_list):
+                            new_sel_y = plants_list[idx]
+                    else: # Label 문자열로 넘어온 경우
+                        s_raw_y = str(raw_y).strip()
+                        if s_raw_y in plants_list:
+                            new_sel_y = s_raw_y
+                        else:
+                            for p in plants_list:
+                                if s_raw_y in p or p in s_raw_y:
+                                    new_sel_y = p
+                                    break
+
+                    if new_sel_x and new_sel_y:
+                        click_sig = f"{new_sel_x}_{new_sel_y}"
+                        # 새로운 클릭 시그니처 발생 시에만 세션 상태 동기화 및 재실행
+                        if st.session_state.get("last_heatmap_click") != click_sig:
+                            st.session_state["sel_date_widget"] = new_sel_x
+                            st.session_state["sel_plant_widget"] = new_sel_y
+                            st.session_state["last_heatmap_click"] = click_sig
+                            st.toast(f"📍 {new_sel_y}, {new_sel_x} 선택됨", icon="✅")
+                            st.rerun()
                 else:
-                    st.session_state["last_heatmap_click"] = None
+                    # 선택이 해제된 경우 시그니처 초기화
+                    if st.session_state.get("last_heatmap_click") is not None:
+                        st.session_state["last_heatmap_click"] = None
+                        st.rerun()
 
             # --- 보조 필터 UI ---
             st.markdown("#### 🔎 상세 조회 조건 (히트맵 클릭 또는 수동 선택)")
@@ -1969,42 +2039,101 @@ with tab4:
             with f_col2:
                 sel_plant_label = st.selectbox("🏢 생산 동 선택", options=plants_list, key="sel_plant_widget")
             
-            # 히트맵 생성 (Tab 1과 동일한 동적 컬러 스케일 적용)
+            # --- [CRITICAL FIX] 완전한 클릭 지원을 위한 단일 Scatter 기반 가짜 히트맵 복원 ---
+            # Streamlit의 px.imshow(Heatmap)는 브라우저 이벤트에서 click 지점을 전혀 반환하지 않는 고질적 버그가 있습니다.
+            # 오버레이 방식조차 무시되므로, 가장 확실하게 클릭이 작동하던 "순수 Scatter 기반의 가짜 히트맵" 방식으로 돌아갑니다.
+            # 단, 이전에 지적된 "색상이 안 예쁘다/히트맵 같지 않다"는 문제를 극복하기 위해 px.imshow와 동일한 완벽한 그라데이션 컬러 매핑 기능을 자체 구현했습니다.
+            
+            fig_test = go.Figure()
+            
+            x_data = []
+            y_data = []
+            z_data = []
+            color_data = []
+            text_data = []
+            
             z_max = pivot_df.max().max()
             z_max = max(z_max, 1.0)
-            
             p_thresh = threshold / z_max if z_max > 0 else 0.8
             p_50 = 0.5 / z_max if z_max > 0 else 0.5
             
             color_scale = [
-                [0, "#e8f5e9"],
+                [0.0, "#e8f5e9"],
                 [min(p_50, 0.99), "#fff9c4"],
                 [max(0, p_thresh - 0.01), "#ffcc80"],
                 [min(p_thresh, 1.0), "#ff8a80"],
                 [1.0, "#e53935"]
             ]
             
-            fig_test = px.imshow(
-                pivot_df,
-                labels=dict(x="시간 축", y="생산 동", color="점유율 (%)"),
-                x=pivot_df.columns,
-                y=plants_list,
-                color_continuous_scale=color_scale,
-                zmin=0, zmax=z_max, aspect="auto"
-            )
-            fig_test.update_traces(
-                hovertemplate="시간 축: %{x}<br>동: %{y}<br>평균 점유율: %{z:.1%}<extra></extra>",
-                texttemplate="<b>%{z:.0%}</b>",
-                textfont=dict(size=15, color="black")
-            )
+            # --- 색상 보간(Interpolation) 알고리즘 ---
+            def hex_to_rgb(h):
+                return tuple(int(h.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
+
+            def rgb_to_hex(r, g, b):
+                return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
+
+            def get_interpolated_color(val):
+                p = val / z_max if z_max > 0 else 0
+                p = min(max(p, 0.0), 1.0)
+                for i in range(len(color_scale)-1):
+                    p1, c1 = color_scale[i]
+                    p2, c2 = color_scale[i+1]
+                    if p1 <= p <= p2:
+                        if p1 == p2:
+                            return c2
+                        ratio = (p - p1) / (p2 - p1)
+                        rgb1, rgb2 = hex_to_rgb(c1), hex_to_rgb(c2)
+                        r = rgb1[0] + (rgb2[0] - rgb1[0]) * ratio
+                        g = rgb1[1] + (rgb2[1] - rgb1[1]) * ratio
+                        b = rgb1[2] + (rgb2[2] - rgb1[2]) * ratio
+                        return rgb_to_hex(r, g, b)
+                return color_scale[-1][1]
+
+            for yr, p in enumerate(plants_list):
+                for xc, c in enumerate(new_cols):
+                    val = pivot_df.iloc[yr, xc]
+                    
+                    x_data.append(c)
+                    y_data.append(p)
+                    z_data.append(val)
+                    color_data.append(get_interpolated_color(val))
+                    text_data.append(f"<b>{val:.0%}</b>")
+            
+            # 셀 사이의 간격(흰 줄)을 최소화하기 위해 size를 아주 크게(95) 할당
+            fig_test.add_trace(go.Scatter(
+                x=x_data,
+                y=y_data,
+                mode='markers+text',
+                marker=dict(
+                    symbol='square',
+                    size=95, 
+                    color=color_data,
+                    line=dict(width=0)
+                ),
+                text=text_data,
+                textfont=dict(size=22, color="black"),
+                hovertemplate="시간 축: %{x}<br>동: %{y}<br>평균 점유율: %{customdata[0]:.1%}<extra></extra>",
+                customdata=[[z] for z in z_data],
+                showlegend=False
+            ))
+
             fig_test.update_layout(
                 title="<b>동별 점유율 (%) 현황 (단위: 주별 (Week), 평균 (AVG))</b>",
-                xaxis_title="시간 축",
-                yaxis_title="생산 동",
-                xaxis=dict(tickfont=dict(size=13, color="black")),
-                yaxis=dict(tickfont=dict(size=13, color="black")),
+                xaxis=dict(
+                    title="시간 축",
+                    tickfont=dict(size=13, color="black"), 
+                    showgrid=False
+                ),
+                yaxis=dict(
+                    title="생산 동",
+                    tickfont=dict(size=13, color="black"), 
+                    showgrid=False, 
+                    autorange="reversed" # 위에서부터 1동이 오도록 뒤집기
+                ),
                 height=450,
-                clickmode='event+select'
+                clickmode='event+select',
+                plot_bgcolor='white',
+                dragmode=False
             )
             
             # 히트맵 차트 렌더링 (on_select 활용)
@@ -2068,4 +2197,7 @@ with tab4:
         else:
             st.warning("분석 결과 데이터가 없습니다.")
         
-        # (중복 코드 블록 제거됨)
+        # [디버그용] 선택 데이터 실시간 확인 (화면 하단으로 이동)
+        st.markdown("<hr>", unsafe_allow_html=True)
+        if st.checkbox("디버그 모드 (클릭 데이터 확인)", value=True):
+            st.write("🔍 DEBUG - 현재 선택 데이터:", st.session_state.get("heatmap_test"))
