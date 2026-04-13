@@ -29,3 +29,6 @@ user_config.json
 !orders_sample.csv
 !capacity_master.json
 !orders_master.json
+
+# Scratch / Temporary scripts
+scratch/

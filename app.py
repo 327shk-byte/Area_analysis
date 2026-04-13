@@ -598,6 +598,52 @@ st.markdown("""
         font-size: 0.8rem !important;
         color: #888 !important;
     }
+    /* 커스텀 컴팩트 테이블 스타일 (User Request: 간격 축소 및 디자인 개선) */
+    .compact-table-container {
+        border: 1px solid #e6e9ef;
+        border-radius: 10px;
+        overflow: hidden;
+        margin: 10px 0;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+        background-color: white;
+    }
+    .compact-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: 'Pretendard', 'Inter', sans-serif;
+        font-size: 0.9rem;
+    }
+    .compact-table th {
+        background-color: #f8f9fa;
+        color: #6c757d;
+        font-weight: 700;
+        text-align: center;
+        padding: 10px 12px;
+        border-bottom: 2px solid #edeff2;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+    }
+    .compact-table td {
+        padding: 6px 12px;
+        border-bottom: 1px solid #f1f3f5;
+        color: #444;
+        text-align: center;
+    }
+    .compact-table tr:nth-child(even) {
+        background-color: #fcfcfc;
+    }
+    .compact-table tr:hover {
+        background-color: #f8f9ff;
+        transition: background-color 0.2s ease;
+    }
+    .compact-table tr:last-child td {
+        border-bottom: none;
+    }
+    /* 특정 컬럼 강조 (사용자명) */
+    .compact-table td:first-child {
+        font-weight: 600;
+        color: #007bff;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -2255,7 +2301,8 @@ with tab5:
                         }
                     }
                     // 최초 렌더링 시 약간의 지연 후 실행 (Streamlit 렌더링 타이밍 대응)
-                    setTimeout(focusPassword, 300);
+                    // [SetFocus] 명확한 포커싱을 위해 지연시간 유지 및 재시도 보강
+                    setTimeout(focusPassword, 500); 
                 </script>
                 """,
                 height=0,
@@ -2264,8 +2311,8 @@ with tab5:
         st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
         st.markdown(f"""
             <div style="display: flex; align-items: baseline; gap: 12px; margin-bottom: 5px;">
-                <h3 style="margin: 0; font-size: 1.35rem;">📥 데이터 업로드 (개발중)</h3>
-                <span style="color: #aaa; font-size: 0.95rem;">추가 기능을 개발하기 위한 데이터 테스트 공간입니다.</span>
+                <h3 style="margin: 0; font-size: 1.35rem;">📥 MES 사용자별 사용현황</h3>
+                <span style="color: #aaa; font-size: 0.95rem;">MES-내부서비스관리-조회 및 엑셀 다운로드</span>
                 <span style="margin-left: auto;">
                     <button onclick="window.location.reload()" style="font-size: 0.7rem; color: #888; background: none; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">로그아웃(새로고침)</button>
                 </span>
@@ -2277,7 +2324,68 @@ with tab5:
             st.session_state["dev_authenticated"] = False
             st.rerun()
 
-    
+        # 1. 사용자 마스터 정보 우선 로드 (항상 표시)
+        user_info_file = "순번 재직여부 아이디 사용자명 부서 전화번호 등록일 260410.txt"
+        df_user_master = pd.DataFrame()
+        
+        if os.path.exists(user_info_file):
+            try:
+                with open(user_info_file, "r", encoding="utf-8") as f:
+                    u_lines = f.readlines()
+                
+                if u_lines:
+                    u_data = []
+                    for u_line in u_lines[1:]:
+                        u_line = u_line.strip()
+                        if not u_line: continue
+                        
+                        u_parts = u_line.split()
+                        if len(u_parts) < 5: continue
+                        
+                        # Pattern: [순번] [재직여부] [아이디] [사용자명] [REST...] [날짜] [시간]
+                        u_reg = f"{u_parts[-2]} {u_parts[-1]}"
+                        u_main = u_parts[:-2]
+                        
+                        order_num = u_main[0]
+                        status = u_main[1]
+                        user_id = u_main[2]
+                        user_name = u_main[3]
+                        
+                        u_rem = u_main[4:]
+                        dept_parts = []
+                        phone = ""
+                        phone_regex = r'\d{2,3}-\d{3,4}-\d{4}'
+                        for ur in u_rem:
+                            if re.match(phone_regex, ur):
+                                phone = ur
+                            else:
+                                dept_parts.append(ur)
+                        
+                        dept = " ".join(dept_parts)
+                        
+                        u_row = {
+                            '순번': order_num,
+                            '재직여부': status,
+                            '아이디': user_id,
+                            '사용자명': user_name,
+                            '부서': dept,
+                            '전화번호': phone,
+                            '등록일': u_reg
+                        }
+                        u_data.append(u_row)
+                    
+                    df_user_master = pd.DataFrame(u_data)
+                    
+                    # [UI Change] Display moved to bottom of analysis
+                    pass 
+            except Exception as ue:
+                st.error(f"사용자 마스터 로드 오류: {ue}")
+        else:
+            st.warning(f"사용자 마스터 파일을 찾을 수 없습니다: {user_info_file}")
+
+        st.divider()
+
+        # 2. 로그 파일 업로드 및 분석
         dev_file_upload = st.file_uploader('"사용자별_사용현황 " 파일을 드래그하거나 클릭하여 업로드하세요.', 
                                             type=["csv", "xlsx", "xls", "xlsb"], key="dev_file_upload")
         
@@ -2440,96 +2548,71 @@ with tab5:
                             
 
                             # --- [User Request] 사용자 마스터 정보 & 미접속 사용자 비교 분석 (위치 변경) ---
-                            user_info_file = "순번 재직여부 아이디 사용자명 부서 전화번호 등록일 260410.txt"
-                            if os.path.exists(user_info_file):
-                                try:
-                                    with open(user_info_file, "r", encoding="utf-8") as f:
-                                        u_lines = f.readlines()
-                                    
-                                    if u_lines:
-                                        u_data = []
-                                        for u_line in u_lines[1:]:
-                                            u_parts = u_line.strip().split()
-                                            if len(u_parts) < 5: continue
-                                            
-                                            u_reg = f"{u_parts[-2]} {u_parts[-1]}"
-                                            u_main = u_parts[:-2]
-                                            
-                                            u_row = {
-                                                '순번': u_main[0],
-                                                '재직여부': u_main[1],
-                                                '아이디': u_main[2],
-                                                '사용자명': u_main[3] if len(u_main) > 3 else "",
-                                                '부서': "",
-                                                '전화번호': "",
-                                                '등록일': u_reg
-                                            }
-                                            
-                                            u_rem = u_main[4:]
-                                            for ur in u_rem:
-                                                if re.match(r'\d{2,3}-\d{3,4}-\d{4}', ur):
-                                                    u_row['전화번호'] = ur
-                                                else:
-                                                    u_row['부서'] = ur
-                                            u_data.append(u_row)
-                                        
-                                        df_user_master = pd.DataFrame(u_data)
-                                        
-                                        # [User Request] 미접속 사용자 비교 분석
-                                        if "uploaded_users" in st.session_state:
-                                            uploaded_users = st.session_state["uploaded_users"]
-                                            missing_users_df = df_user_master[~df_user_master['사용자명'].str.strip().isin(uploaded_users)].copy()
-                                            
-                                            st.markdown("<hr style='border: 1px dashed #ddd; margin: 40px 0 20px 0;'>", unsafe_allow_html=True)
-                                            st.markdown(f"### ⚠️ 시스템 미접속 사용자 명단 (총 {len(missing_users_df)}명)")
-                                            st.caption("※ 사용자 마스터 정보에는 등록되어 있으나, 업로드한 '사용자별_사용현황' 엑셀 상에 접속 기록이 없는 인원입니다.")
-                                            
-                                            # [User Request] 한눈에 볼 수 있도록 사용자명 나열 (쉼표 구분)
-                                            if not missing_users_df.empty:
-                                                names_list = ", ".join(missing_users_df['사용자명'].tolist())
-                                                st.markdown(f"""
-                                                    <div style="background-color: rgba(255, 75, 75, 0.05); padding: 15px; border-radius: 8px; border: 1px solid rgba(255, 75, 75, 0.2); margin: 10px 0 10px 0; line-height: 1.6;">
-                                                        <strong style="color: #ff4b4b; font-size: 0.9rem;">📝 미접속 사용자 명단:</strong><br>
-                                                        <span style="font-size: 0.95rem; color: #333;">{names_list}</span>
-                                                    </div>
-                                                """, unsafe_allow_html=True)
+                            # uploaded_users가 세션에 있을 때만 비교 수행
+                            if "uploaded_users" in st.session_state and not df_user_master.empty:
+                                uploaded_users = st.session_state["uploaded_users"]
+                                missing_users_df = df_user_master[~df_user_master['사용자명'].str.strip().isin(uploaded_users)].copy()
+                                
+                                st.markdown("<hr style='border: 1px dashed #ddd; margin: 40px 0 20px 0;'>", unsafe_allow_html=True)
+                                st.markdown(f"### ⚠️ 시스템 미접속 사용자 명단 (총 {len(missing_users_df)}명)")
+                                st.caption("※ 사용자 마스터 정보에는 등록되어 있으나, 업로드한 '사용자별_사용현황' 엑셀 상에 접속 기록이 없는 인원입니다.")
+                                
+                                if not missing_users_df.empty:
+                                    names_list = ", ".join(missing_users_df['사용자명'].tolist())
+                                    st.markdown(f"""
+                                        <div style="background-color: rgba(255, 75, 75, 0.05); padding: 15px; border-radius: 8px; border: 1px solid rgba(255, 75, 75, 0.2); margin: 10px 0 10px 0; line-height: 1.6;">
+                                            <strong style="color: #ff4b4b; font-size: 0.9rem;">📝 미접속 사용자 명단:</strong><br>
+                                            <span style="font-size: 0.95rem; color: #333;">{names_list}</span>
+                                        </div>
+                                    """, unsafe_allow_html=True)
 
-                                                # [User Request] 부서별 미접속자 그룹화 표시
-                                                dept_groups = missing_users_df.groupby('부서')['사용자명'].apply(lambda x: ", ".join(x)).reset_index()
-                                                dept_lines = []
-                                                for _, row in dept_groups.iterrows():
-                                                    d_name = row['부서'] if row['부서'] else "부서 미지정"
-                                                    dept_lines.append(f"<li style='margin-bottom: 5px;'><strong style='color: #444; font-size: 0.9rem;'>{d_name}</strong> : <span style='font-size: 0.9rem; color: #555;'>{row['사용자명']}</span></li>")
-                                                
-                                                dept_html = f"""
-                                                    <div style="background-color: rgba(255, 75, 75, 0.05); padding: 15px; border-radius: 8px; border: 1px solid rgba(255, 75, 75, 0.2); margin: 0 0 20px 0;">
-                                                        <strong style="color: #ff4b4b; font-size: 0.9rem; display: block; margin-bottom: 10px;">🏢 부서별 미접속 현황:</strong>
-                                                        <ul style="list-style: none; padding-left: 0; margin: 0;">
-                                                            {"".join(dept_lines)}
-                                                        </ul>
-                                                    </div>
-                                                """
-                                                st.markdown(dept_html, unsafe_allow_html=True)
-                                            
-                                            if not missing_users_df.empty:
-                                                with st.expander(f"미접속 사용자 명단 확인 ({len(missing_users_df)}명)", expanded=True):
-                                                    # [User Request] 사용자명, 부서, 아이디, 등록일만 표시
-                                                    display_cols = ['사용자명', '부서', '아이디', '등록일']
-                                                    available_cols = [c for c in display_cols if c in missing_users_df.columns]
-                                                    st.dataframe(missing_users_df[available_cols], use_container_width=True)
-                                            else:
-                                                st.success("🎉 모든 마스터 사용자가 시스템 접속 기록이 있습니다.")
+                                    dept_groups = missing_users_df.groupby('부서')['사용자명'].apply(lambda x: ", ".join(x)).reset_index()
+                                    dept_lines = []
+                                    for _, row in dept_groups.iterrows():
+                                        d_name = row['부서'] if row['부서'] else "부서 미지정"
+                                        dept_lines.append(f"<li style='margin-bottom: 5px;'><strong style='color: #444; font-size: 0.9rem;'>{d_name}</strong> : <span style='font-size: 0.9rem; color: #555;'>{row['사용자명']}</span></li>")
+                                    
+                                    dept_html = f"""
+                                        <div style="background-color: rgba(255, 75, 75, 0.05); padding: 15px; border-radius: 8px; border: 1px solid rgba(255, 75, 75, 0.2); margin: 0 0 20px 0;">
+                                            <strong style="color: #ff4b4b; font-size: 0.9rem; display: block; margin-bottom: 10px;">🏢 부서별 미접속 현황:</strong>
+                                            <ul style="list-style: none; padding-left: 0; margin: 0;">
+                                                {"".join(dept_lines)}
+                                            </ul>
+                                        </div>
+                                    """
+                                    st.markdown(dept_html, unsafe_allow_html=True)
+                                
+                                    with st.expander(f"미접속 사용자 명단 확인 ({len(missing_users_df)}명)", expanded=True):
+                                        display_cols = ['사용자명', '부서', '아이디', '등록일']
+                                        available_cols = [c for c in display_cols if c in missing_users_df.columns]
                                         
-                                        st.markdown("<hr style='border: 1px solid #eee; margin: 40px 0 20px 0;'>", unsafe_allow_html=True)
-                                        with st.expander("👤 사용자 마스터 정보 확인 (전체)", expanded=False):
-                                            st.dataframe(df_user_master, use_container_width=True, height=400)
-                                            
-                                    else:
-                                        st.info("사용자 마스터 파일이 비어 있습니다.")
-                                except Exception as ue:
-                                    st.error(f"사용자 데이터 로드 중 오류: {ue}")
-                            else:
-                                st.warning(f"사용자 마스터 파일을 찾을 수 없습니다: {user_info_file}")
+                                        table_header = "".join([f"<th>{col}</th>" for col in available_cols])
+                                        table_rows = ""
+                                        for _, row in missing_users_df[available_cols].iterrows():
+                                            row_cells = "".join([f"<td>{row[col]}</td>" for col in available_cols])
+                                            table_rows += f"<tr>{row_cells}</tr>"
+                                        
+                                        custom_table_html = f"""
+                                        <div class="compact-table-container">
+                                            <table class="compact-table">
+                                                <thead>
+                                                    <tr>{table_header}</tr>
+                                                </thead>
+                                                <tbody>
+                                                    {table_rows}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        """
+                                        st.markdown(custom_table_html, unsafe_allow_html=True)
+                                        st.caption("💡 위 명단은 '사용자별_사용현황' 데이터에 없는 마스터 사용자들입니다.")
+                                else:
+                                    st.success("🎉 모든 마스터 사용자가 시스템 접속 기록이 있습니다.")
+                                
+                                # [User Request] 마스터 정보 전체 보기를 미접속자 명단 아래로 이동
+                                st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
+                                with st.expander("👤 사용자 마스터 정보 확인 (전체)", expanded=False):
+                                    st.dataframe(df_user_master, use_container_width=True, height=400)
 
                             st.markdown("<hr style='border: 0.5px solid #eee; margin: 30px 0;'>", unsafe_allow_html=True)
                             st.plotly_chart(fig_weekly, use_container_width=True)
